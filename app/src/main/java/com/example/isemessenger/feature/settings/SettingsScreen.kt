@@ -2,6 +2,8 @@ package com.example.isemessenger.feature.settings
 
 import com.example.isemessenger.*
 import com.example.isemessenger.core.config.*
+import com.example.isemessenger.feature.auth.AppTextField
+import com.example.isemessenger.feature.auth.PrimaryButton
 
 import android.annotation.SuppressLint
 import android.animation.ValueAnimator
@@ -366,12 +368,15 @@ import kotlin.math.roundToInt
 @Composable
 internal fun SettingsScreenRoute(
     state: AppState, errorState: SnackbarHostState, saveName: (String) -> Unit,
+    requestEmailChange: (String, () -> Unit) -> Unit,
+    confirmEmailChange: (String, String, () -> Unit) -> Unit,
     previewAvatar: (Uri) -> Unit, removeAvatar: () -> Unit,
     openAvatar: (String, String, Long) -> Unit, logout: () -> Unit,
     deleteAccount: () -> Unit, permissionError: () -> Unit, back: () -> Unit
 ) = SettingsScreenContent(
-    state.userName, state.userAvatar, state.userId, state.loading,
-    errorState, saveName, previewAvatar, removeAvatar, openAvatar, logout,
+    state.userName, state.userAvatar, state.userId, state.email, state.loading,
+    errorState, saveName, requestEmailChange, confirmEmailChange,
+    previewAvatar, removeAvatar, openAvatar, logout,
     deleteAccount, permissionError, back
 )
 
@@ -381,9 +386,12 @@ internal fun SettingsScreenContent(
     userName: String,
     userAvatar: String,
     userId: Long,
+    email: String,
     loading: Boolean,
     errorState: SnackbarHostState,
     saveName: (String) -> Unit,
+    requestEmailChange: (String, () -> Unit) -> Unit,
+    confirmEmailChange: (String, String, () -> Unit) -> Unit,
     previewAvatar: (Uri) -> Unit,
     removeAvatar: () -> Unit,
     openAvatar: (String, String, Long) -> Unit,
@@ -399,6 +407,8 @@ internal fun SettingsScreenContent(
     var menuVisible by remember { mutableStateOf(false) }
     var galleryVisible by remember { mutableStateOf(false) }
     val gallerySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var emailChangeStep by remember { mutableStateOf<EmailChangeStep?>(null) }
+    var pendingEmail by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf<ConfirmAction?>(null) }
     val galleryPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (hasImagePermission(context)) galleryVisible = true else permissionError()
@@ -474,7 +484,9 @@ internal fun SettingsScreenContent(
             ) {
                 Avatar(userName.ifBlank { "Пользователь" }, 104.dp, userAvatar, userId)
             }
-            Spacer(Modifier.height(26.dp))
+            Spacer(Modifier.height(10.dp))
+            Text(email, color = Muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(22.dp))
             OutlinedTextField(
                 value = name,
                 onValueChange = { if (it.codePointCount(0, it.length) <= 40) name = it },
@@ -512,7 +524,35 @@ internal fun SettingsScreenContent(
                 ),
                 modifier = Modifier.fillMaxWidth().height(60.dp)
             )
+            Spacer(Modifier.height(14.dp))
+            PrimaryButton("Сменить почту", loading = false, enabled = !loading) {
+                pendingEmail = ""
+                emailChangeStep = EmailChangeStep.Email
+            }
         }
+    }
+    when (emailChangeStep) {
+        EmailChangeStep.Email -> ChangeEmailAddressSheet(
+            loading = loading,
+            dismiss = { if (!loading) emailChangeStep = null },
+            submit = { value ->
+                requestEmailChange(value) {
+                    pendingEmail = value.trim().lowercase(Locale.ROOT)
+                    emailChangeStep = EmailChangeStep.Code
+                }
+            }
+        )
+        EmailChangeStep.Code -> ChangeEmailCodeSheet(
+            email = pendingEmail,
+            loading = loading,
+            dismiss = { if (!loading) emailChangeStep = null },
+            submit = { code ->
+                confirmEmailChange(pendingEmail, code) { emailChangeStep = null }
+            },
+            resend = { requestEmailChange(pendingEmail) {} },
+            changeEmail = { if (!loading) emailChangeStep = EmailChangeStep.Email }
+        )
+        null -> Unit
     }
     confirmation?.let { action ->
         val deleting = action == ConfirmAction.Delete
@@ -549,6 +589,93 @@ internal fun SettingsScreenContent(
                     }
                 }
                 AppErrorPopup(errorState)
+            }
+        }
+    }
+}
+
+private enum class EmailChangeStep { Email, Code }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChangeEmailAddressSheet(
+    loading: Boolean,
+    dismiss: () -> Unit,
+    submit: (String) -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+    ModalBottomSheet(
+        onDismissRequest = dismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = !loading,
+        containerColor = Paper,
+        scrimColor = OverlayScrimColor,
+        dragHandle = null,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        BottomSheetWindowBehavior()
+        BottomSheetHandle()
+        Column(Modifier.fillMaxWidth().bottomSheetPop().navigationBarsPadding().imePadding().padding(start = 24.dp, end = 24.dp, bottom = 22.dp)) {
+            AppTextField(
+                title = "Почта",
+                value = email,
+                onValueChange = { email = it },
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Done,
+                onDone = { focusManager.clearFocus(); submit(email) }
+            )
+            Spacer(Modifier.height(14.dp))
+            PrimaryButton("Получить код", loading) {
+                focusManager.clearFocus()
+                submit(email)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChangeEmailCodeSheet(
+    email: String,
+    loading: Boolean,
+    dismiss: () -> Unit,
+    submit: (String) -> Unit,
+    resend: () -> Unit,
+    changeEmail: () -> Unit
+) {
+    var code by remember(email) { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+    ModalBottomSheet(
+        onDismissRequest = dismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = !loading,
+        containerColor = Paper,
+        scrimColor = OverlayScrimColor,
+        dragHandle = null,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        BottomSheetWindowBehavior()
+        BottomSheetHandle()
+        Column(Modifier.fillMaxWidth().bottomSheetPop().navigationBarsPadding().imePadding().padding(start = 24.dp, end = 24.dp, bottom = 18.dp)) {
+            AppTextField(
+                title = "Код",
+                value = code,
+                onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                keyboardType = KeyboardType.NumberPassword,
+                imeAction = ImeAction.Done,
+                onDone = { focusManager.clearFocus(); submit(code) }
+            )
+            Spacer(Modifier.height(14.dp))
+            PrimaryButton("Подтвердить", loading) {
+                focusManager.clearFocus()
+                submit(code)
+            }
+            TextButton(onClick = resend, enabled = !loading, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Отправить код ещё раз", color = Forest)
+            }
+            TextButton(onClick = changeEmail, enabled = !loading, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Изменить почту", color = Forest)
             }
         }
     }

@@ -1708,6 +1708,54 @@ internal class MessengerController(context: Context, private val onCallFinished:
         }
     }
 
+    fun requestEmailChange(value: String, codeSent: () -> Unit) {
+        val email = value.trim().lowercase(Locale.ROOT)
+        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            showError("Введите корректную почту")
+            return
+        }
+        if (email == state.email.lowercase(Locale.ROOT)) {
+            showError("Это ваша текущая почта")
+            return
+        }
+        scope.launch {
+            state = state.copy(loading = true, error = null)
+            runCatching {
+                api.post("/profile/email/request-code", JSONObject().put("email", email), state.token)
+            }.onSuccess {
+                state = state.copy(loading = false)
+                codeSent()
+            }.onFailureActive { state = state.copy(loading = false, error = errorText(it)) }
+        }
+    }
+
+    fun confirmEmailChange(value: String, code: String, changed: () -> Unit) {
+        val email = value.trim().lowercase(Locale.ROOT)
+        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            showError("Введите корректную почту")
+            return
+        }
+        if (code.length != 6 || code.any { it !in '0'..'9' }) {
+            showError("Введите код из шести цифр")
+            return
+        }
+        scope.launch {
+            state = state.copy(loading = true, error = null)
+            runCatching {
+                api.post(
+                    "/profile/email/verify-code",
+                    JSONObject().put("email", email).put("code", code),
+                    state.token
+                )
+            }.onSuccess { response ->
+                val savedEmail = response.optString("email", email)
+                preferences.edit { putString("email", savedEmail) }
+                state = state.copy(email = savedEmail, loading = false)
+                changed()
+            }.onFailureActive { state = state.copy(loading = false, error = errorText(it)) }
+        }
+    }
+
     fun saveAvatar(uri: Uri) {
         scope.launch {
             state = state.copy(loading = true, error = null)
@@ -5030,6 +5078,8 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
                             state = state,
                             errorState = snackbar,
                             saveName = controller::updateName,
+                            requestEmailChange = controller::requestEmailChange,
+                            confirmEmailChange = controller::confirmEmailChange,
                             previewAvatar = controller::openAvatarSelection,
                             removeAvatar = controller::removeAvatar,
                             openAvatar = controller::openAvatarPreview,
