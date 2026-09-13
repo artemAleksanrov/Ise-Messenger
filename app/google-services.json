@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "753627949627",
+    "project_id": "ise-messenger-f209d",
+    "storage_bucket": "ise-messenger-f209d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:753627949627:android:e8a8b5b75885db56bf8a1e",
+        "android_client_info": {
+          "package_name": "com.example.isemessenger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCi7I9jN_g0z74Ft_6LLjev9n286lCN4Fs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
