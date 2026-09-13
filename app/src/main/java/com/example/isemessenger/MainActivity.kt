@@ -315,7 +315,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.app.ServiceCompat
-import androidx.core.graphics.drawable.IconCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -448,13 +447,7 @@ class IseFirebaseMessagingService : FirebaseMessagingService() {
             val video = message.data["video"].toBoolean()
             val token = getSharedPreferences("ise_session", Context.MODE_PRIVATE).getString("token", "").orEmpty()
             if (callId.isBlank() || chatId < 1L || callerId < 1L || token.isBlank()) return
-            val fallback = notificationAvatarFallback(callerName, callerId)
-            showIncomingCallNotification(this, callId, chatId, callerId, callerName, video, fallback)
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                loadNotificationAvatar(this@IseFirebaseMessagingService, callerId, token)?.let { avatar ->
-                    showIncomingCallNotification(this@IseFirebaseMessagingService, callId, chatId, callerId, callerName, video, avatar)
-                }
-            }
+            showIncomingCallNotification(this, callId, chatId, callerId, callerName, video)
             return
         }
         val chatId = message.data["chat_id"]?.toLongOrNull() ?: 0L
@@ -470,16 +463,7 @@ class IseFirebaseMessagingService : FirebaseMessagingService() {
         if (notificationSuppressed(this, chatId, messageId)) return
         val title = message.notification?.title ?: message.data["title"] ?: "Ise Messenger"
         val body = message.notification?.body ?: message.data["body"] ?: return
-        val senderId = message.data["sender_id"]?.toLongOrNull() ?: 0L
-        val token = getSharedPreferences("ise_session", Context.MODE_PRIVATE).getString("token", "").orEmpty()
-        val fallback = notificationAvatarFallback(title, senderId)
-        showNotification(this, title, body, message.data["chat_id"], message.data["message_id"], fallback, type == "call_history")
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            val avatar = loadNotificationAvatar(this@IseFirebaseMessagingService, senderId, token) ?: return@launch
-            if (!notificationSuppressed(this@IseFirebaseMessagingService, chatId, messageId)) {
-                showNotification(this@IseFirebaseMessagingService, title, body, message.data["chat_id"], message.data["message_id"], avatar, type == "call_history")
-            }
-        }
+        showNotification(this, title, body, message.data["chat_id"], message.data["message_id"], type == "call_history")
     }
 }
 
@@ -571,7 +555,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         "Откройте чат и попробуйте отправить сообщение ещё раз",
                         null,
                         null,
-                        notificationAvatarFallback("Ise Messenger", 0L)
+                        false
                     )
                 }
             } finally {
@@ -679,8 +663,7 @@ internal fun showIncomingCallNotification(
     chatId: Long,
     callerId: Long,
     callerName: String,
-    video: Boolean,
-    avatar: Bitmap
+    video: Boolean
 ) {
     if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
     ensureIncomingCallNotificationChannel(context)
@@ -721,7 +704,6 @@ internal fun showIncomingCallNotification(
     val ringtone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
     val caller = Person.Builder()
         .setName(callerName)
-        .setIcon(IconCompat.createWithBitmap(avatar))
         .setImportant(true)
         .build()
     val callText = if (video) "Входящий видеозвонок" else "Входящий аудиозвонок"
@@ -730,7 +712,6 @@ internal fun showIncomingCallNotification(
     val builder = NotificationCompat.Builder(context, IncomingCallNotificationChannelId)
         .setSmallIcon(R.drawable.ic_notification_call)
         .setColor(NotificationAccentColor)
-        .setLargeIcon(avatar)
         .setContentTitle(callerName)
         .setContentText(callText)
         .setStyle(callStyle)
@@ -809,7 +790,6 @@ internal fun showNotification(
     body: String,
     chatId: String?,
     messageId: String?,
-    avatar: Bitmap,
     callEvent: Boolean = false
 ) {
     if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
@@ -832,15 +812,12 @@ internal fun showNotification(
         intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
-    val sender = Person.Builder().setName(title).setIcon(IconCompat.createWithBitmap(avatar)).build()
-    val owner = Person.Builder().setName("Вы").build()
     val builder = NotificationCompat.Builder(context, NotificationChannelId)
         .setSmallIcon(if (callEvent) R.drawable.ic_notification_call else R.drawable.ic_notification_message)
         .setColor(NotificationAccentColor)
-        .setLargeIcon(avatar)
         .setContentTitle(title)
         .setContentText(body)
-        .setStyle(NotificationCompat.MessagingStyle(owner).addMessage(body, System.currentTimeMillis(), sender))
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
         .setCategory(if (callEvent) NotificationCompat.CATEGORY_EVENT else NotificationCompat.CATEGORY_MESSAGE)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setAutoCancel(true)
@@ -1479,6 +1456,12 @@ internal data class IceServerConfig(
 )
 
 @Immutable
+internal data class AppUpdateInfo(
+    val versionName: String,
+    val downloadUrl: String
+)
+
+@Immutable
 internal data class AppState(
     val screen: Screen = Screen.Splash,
     val email: String = "",
@@ -1518,6 +1501,8 @@ internal data class AppState(
     val internetAvailable: Boolean = true,
     val online: Boolean = false,
     val listsUpdating: Boolean = false,
+    val availableUpdate: AppUpdateInfo? = null,
+    val updateDownloading: Boolean = false,
     val addSheet: Boolean = false,
     val error: String? = null
 )
@@ -1556,6 +1541,9 @@ internal class MessengerController(context: Context, private val onCallFinished:
     private var chatsRefreshNeedsLoading = false
     private var chatsRefreshShowsUpdating = false
     private var chatsRefreshJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var updateDownloadJob: Job? = null
+    private var pendingUpdateFile: File? = null
     private var mediaUploadJob: Job? = null
     private var mediaReturnScreen = Screen.Chat
     private var notificationChatId = 0L
@@ -3404,6 +3392,11 @@ internal class MessengerController(context: Context, private val onCallFinished:
             listsUpdating = listUpdatesInFlight > 0,
             error = null
         )
+        if (appForeground) {
+            updateCheckJob?.cancel()
+            updateCheckJob = null
+            startAppUpdateChecks()
+        }
         socketReconnectAttempt = 0
         if (!appForeground || state.token.isBlank() || state.userName.isBlank()) return
         registerStoredPushToken()
@@ -3413,6 +3406,8 @@ internal class MessengerController(context: Context, private val onCallFinished:
     fun onForeground() {
         appForeground = true
         socketReconnectAttempt = 0
+        maybeInstallPendingUpdate()
+        startAppUpdateChecks()
         if (state.token.isBlank() || state.userName.isBlank()) return
         if (!state.internetAvailable) return
         registerStoredPushToken()
@@ -3421,6 +3416,8 @@ internal class MessengerController(context: Context, private val onCallFinished:
 
     fun onBackground() {
         appForeground = false
+        updateCheckJob?.cancel()
+        updateCheckJob = null
         stopVoiceTyping()
         if (state.call != null) {
             stopTyping()
@@ -3447,6 +3444,76 @@ internal class MessengerController(context: Context, private val onCallFinished:
         onBackground()
         api.cancelAll()
         scope.cancel()
+    }
+
+    private fun startAppUpdateChecks() {
+        if (updateCheckJob?.isActive == true) return
+        updateCheckJob = scope.launch {
+            while (appForeground) {
+                if (state.internetAvailable) {
+                    runCatching {
+                        withContext(Dispatchers.IO) { fetchLatestAppUpdate() }
+                    }.onSuccess { update ->
+                        state = state.copy(availableUpdate = update)
+                    }
+                }
+                delay(AppUpdateCheckIntervalMillis)
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate() {
+        pendingUpdateFile?.takeIf(File::isFile)?.let {
+            launchUpdateInstaller(it)
+            return
+        }
+        val update = state.availableUpdate ?: return
+        if (updateDownloadJob?.isActive == true) return
+        updateDownloadJob = scope.launch {
+            state = state.copy(updateDownloading = true, error = null)
+            runCatching {
+                withContext(Dispatchers.IO) { downloadAppUpdate(appContext, update) }
+            }.onSuccess { file ->
+                state = state.copy(updateDownloading = false)
+                launchUpdateInstaller(file)
+            }.onFailureActive { error ->
+                state = state.copy(updateDownloading = false, error = errorText(error))
+            }
+        }
+    }
+
+    private fun maybeInstallPendingUpdate() {
+        val file = pendingUpdateFile?.takeIf(File::isFile) ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || appContext.packageManager.canRequestPackageInstalls()) {
+            launchUpdateInstaller(file)
+        }
+    }
+
+    private fun launchUpdateInstaller(file: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !appContext.packageManager.canRequestPackageInstalls()) {
+            pendingUpdateFile = file
+            runCatching {
+                appContext.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${appContext.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                pendingUpdateFile = null
+                state = state.copy(error = "Разрешите установку обновлений для Ise Messenger")
+            }
+            return
+        }
+        pendingUpdateFile = null
+        runCatching {
+            val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", file)
+            appContext.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, AppUpdateMimeType)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        }.onFailure {
+            state = state.copy(error = "Не удалось открыть установщик обновления")
+        }
     }
 
     private fun restoreSession() {
@@ -9613,6 +9680,121 @@ internal val MediaLoadClient = OkHttpClient.Builder()
     .connectTimeout(12, TimeUnit.SECONDS)
     .readTimeout(2, TimeUnit.MINUTES)
     .build()
+
+internal const val AppUpdateRepositoryUrl = "https://github.com/artemAleksanrov/Ise-Messenger"
+internal val AppUpdateReleaseApiUrl =
+    "https://api.github.com/repos/${AppUpdateRepositoryUrl.substringAfter("github.com/")}/releases/latest"
+internal const val AppUpdateMimeType = "application/vnd.android.package-archive"
+internal val AppUpdateCheckIntervalMillis = TimeUnit.MINUTES.toMillis(30)
+internal const val MaximumAppUpdateBytes = 250L * 1024L * 1024L
+private val AppVersionNumberPattern = Regex("\\d+")
+
+internal fun isVersionNewer(candidate: String, installed: String): Boolean {
+    val candidateParts = AppVersionNumberPattern.findAll(candidate)
+        .mapNotNull { it.value.toLongOrNull() }
+        .toList()
+    val installedParts = AppVersionNumberPattern.findAll(installed)
+        .mapNotNull { it.value.toLongOrNull() }
+        .toList()
+    if (candidateParts.isEmpty() || installedParts.isEmpty()) return false
+    val size = maxOf(candidateParts.size, installedParts.size)
+    repeat(size) { index ->
+        val candidatePart = candidateParts.getOrElse(index) { 0L }
+        val installedPart = installedParts.getOrElse(index) { 0L }
+        if (candidatePart != installedPart) return candidatePart > installedPart
+    }
+    return false
+}
+
+private fun trustedAppUpdateUrl(value: String): Boolean {
+    val uri = Uri.parse(value)
+    val host = uri.host.orEmpty().lowercase(Locale.US)
+    return uri.scheme.equals("https", ignoreCase = true) &&
+        (host == "github.com" || host.endsWith(".githubusercontent.com"))
+}
+
+internal fun fetchLatestAppUpdate(): AppUpdateInfo? {
+    val request = Request.Builder()
+        .url(AppUpdateReleaseApiUrl)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "Ise-Messenger-Android/${BuildConfig.VERSION_NAME}")
+        .build()
+    return MediaLoadClient.newCall(request).execute().use { response ->
+        if (response.code == 404) return@use null
+        if (!response.isSuccessful) throw IOException("Не удалось проверить обновление")
+        val payload = response.body?.string().orEmpty()
+        if (payload.isBlank()) throw IOException("GitHub вернул пустой ответ")
+        val release = JSONObject(payload)
+        val tag = release.optString("tag_name").trim()
+        if (!isVersionNewer(tag, BuildConfig.VERSION_NAME)) return@use null
+        val assets = release.optJSONArray("assets") ?: return@use null
+        val candidates = buildList {
+            for (index in 0 until assets.length()) {
+                val asset = assets.optJSONObject(index) ?: continue
+                val name = asset.optString("name").trim()
+                val url = asset.optString("browser_download_url").trim()
+                if (!name.endsWith(".apk", ignoreCase = true) || !trustedAppUpdateUrl(url)) continue
+                val lowerName = name.lowercase(Locale.US)
+                val score = (if ("universal" in lowerName) 4 else 0) +
+                    (if ("release" in lowerName) 2 else 0) -
+                    (if ("debug" in lowerName) 8 else 0)
+                add(score to url)
+            }
+        }
+        val downloadUrl = candidates.maxByOrNull { it.first }?.second ?: return@use null
+        AppUpdateInfo(tag.removePrefix("v").removePrefix("V"), downloadUrl)
+    }
+}
+
+internal fun downloadAppUpdate(context: Context, update: AppUpdateInfo): File {
+    if (!trustedAppUpdateUrl(update.downloadUrl)) throw IOException("Недопустимая ссылка обновления")
+    val directory = File(context.cacheDir, "updates").apply { mkdirs() }
+    val safeVersion = update.versionName.replace(Regex("[^0-9A-Za-z._-]"), "_").take(48)
+    val target = File(directory, "ise-messenger-${safeVersion.ifBlank { "update" }}.apk")
+    val partial = File(directory, "${target.name}.part")
+    partial.delete()
+    val request = Request.Builder()
+        .url(update.downloadUrl)
+        .header("Accept", AppUpdateMimeType)
+        .header("User-Agent", "Ise-Messenger-Android/${BuildConfig.VERSION_NAME}")
+        .build()
+    try {
+        MediaLoadClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Не удалось загрузить обновление")
+            val body = response.body ?: throw IOException("GitHub вернул пустой файл")
+            val declaredSize = body.contentLength()
+            if (declaredSize > MaximumAppUpdateBytes) throw IOException("Файл обновления слишком большой")
+            body.byteStream().use { input ->
+                partial.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var downloaded = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        downloaded += count
+                        if (downloaded > MaximumAppUpdateBytes) throw IOException("Файл обновления слишком большой")
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+        }
+        val signature = partial.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
+        if (signature[0] != 'P'.code.toByte() || signature[1] != 'K'.code.toByte()) {
+            throw IOException("Загружен некорректный APK")
+        }
+        target.delete()
+        if (!partial.renameTo(target)) {
+            partial.copyTo(target, overwrite = true)
+            partial.delete()
+        }
+        directory.listFiles()?.filter { it.isFile && it != target }?.forEach(File::delete)
+        return target
+    } catch (error: Throwable) {
+        partial.delete()
+        throw error
+    }
+}
 internal val DeviceThumbnailSemaphore = Semaphore(3)
 internal val BitmapDecodeSemaphore = Semaphore(2)
 internal val RemoteVideoThumbnailSemaphore = Semaphore(2)

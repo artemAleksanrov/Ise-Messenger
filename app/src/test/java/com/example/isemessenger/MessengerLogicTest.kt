@@ -23,4 +23,13 @@ class MessengerLogicTest {
         assertTrue(waveform[2] > waveform[0])
         assertTrue(normalizeAudioWaveform(FloatArray(5)).isEmpty())
     }
+
+    @Test
+    fun githubReleaseVersionMustBeNewerThanInstalledVersion() {
+        assertTrue(isVersionNewer("v1.1.0", "1.0"))
+        assertTrue(isVersionNewer("release-2.0", "1.9.9"))
+        assertFalse(isVersionNewer("v1.0.0", "1.0"))
+        assertFalse(isVersionNewer("v0.9.9", "1.0"))
+        assertFalse(isVersionNewer("latest", "1.0"))
+    }
 }

@@ -297,6 +297,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -376,6 +377,8 @@ internal fun ChatsScreen(controller: MessengerController, archived: Boolean) {
         userName = state.userName,
         userAvatar = state.userAvatar,
         userId = state.userId,
+        availableUpdate = state.availableUpdate,
+        updateDownloading = state.updateDownloading,
         archived = archived,
         openChat = controller::openChat,
         addChat = controller::showAddSheet,
@@ -386,6 +389,7 @@ internal fun ChatsScreen(controller: MessengerController, archived: Boolean) {
         archiveChat = controller::setChatArchived,
         deleteChat = controller::deleteChat,
         renameChat = controller::setPersonalChatName,
+        installUpdate = controller::downloadAndInstallUpdate,
         back = controller::back
     )
 }
@@ -399,6 +403,8 @@ internal fun ChatsScreenContent(
     userName: String,
     userAvatar: String,
     userId: Long,
+    availableUpdate: AppUpdateInfo?,
+    updateDownloading: Boolean,
     archived: Boolean,
     openChat: (ChatItem) -> Unit,
     addChat: () -> Unit,
@@ -409,6 +415,7 @@ internal fun ChatsScreenContent(
     archiveChat: (ChatItem, Boolean) -> Unit,
     deleteChat: (ChatItem) -> Unit,
     renameChat: (ChatItem, String) -> Unit,
+    installUpdate: () -> Unit,
     back: () -> Unit
 ) {
     val context = LocalContext.current
@@ -429,6 +436,7 @@ internal fun ChatsScreenContent(
                             it.email.contains(query, ignoreCase = true))
         }
     }
+    val showAppUpdate = !archived && searchQuery.isBlank() && availableUpdate != null
     val archivedUnreadCount = remember(chats) {
         chats.sumOf { if (it.archived) it.unread.toLong() else 0L }
     }
@@ -542,7 +550,7 @@ internal fun ChatsScreenContent(
                 )
             }
             Box(Modifier.fillMaxSize()) {
-                if (displayedChats.isEmpty() && !loading) {
+                if (displayedChats.isEmpty() && !loading && !showAppUpdate) {
                     Text(
                         when {
                             searchQuery.isNotBlank() -> "Ничего не найдено"
@@ -555,7 +563,10 @@ internal fun ChatsScreenContent(
                     )
                 }
                 LazyColumn(
-                    contentPadding = PaddingValues(vertical = 10.dp),
+                    contentPadding = PaddingValues(
+                        top = 10.dp,
+                        bottom = if (showAppUpdate) 74.dp else 10.dp
+                    ),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(displayedChats, key = { it.id }, contentType = { "chat" }) { chat ->
@@ -583,6 +594,13 @@ internal fun ChatsScreenContent(
                             }
                         )
                     }
+                }
+                if (showAppUpdate) {
+                    AppUpdateBar(
+                        downloading = updateDownloading,
+                        install = installUpdate,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
                 }
             }
             }
@@ -654,6 +672,50 @@ internal fun ChatsScreenContent(
                 renameChat(chat, "")
             }
         )
+    }
+}
+
+@Composable
+private fun AppUpdateBar(
+    downloading: Boolean,
+    install: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var loadingDotCount by remember(downloading) { mutableIntStateOf(0) }
+    LaunchedEffect(downloading) {
+        if (!downloading) return@LaunchedEffect
+        while (true) {
+            delay(350)
+            loadingDotCount = (loadingDotCount + 1) % 4
+        }
+    }
+    Surface(
+        color = Forest,
+        modifier = modifier.fillMaxWidth().clickable(enabled = !downloading, onClick = install)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (downloading) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Загрузка", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = ".".repeat(loadingDotCount),
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(24.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = "Обновить приложение",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 
