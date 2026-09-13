@@ -413,6 +413,9 @@ internal var ActiveAudioMessageId by mutableLongStateOf(0L)
 internal val UnifiedMessageBubbleBrush = Brush.linearGradient(
     listOf(Color(0xFF43B98A), Color(0xFF238D70), Color(0xFF176957))
 )
+internal val IncomingMessageBubbleBrush = Brush.linearGradient(
+    listOf(Color(0xFFFFFFFF), Color(0xFFEAF1ED))
+)
 
 private data class BlurSnapshot(
     val bitmap: Bitmap,
@@ -8150,8 +8153,10 @@ internal fun MessageBubble(
         tween(if (dragOffset == 0f) 180 else 55, easing = FastOutSlowInEasing),
         label = "message_swipe"
     )
-    val bubbleBrush = UnifiedMessageBubbleBrush
-    val bubbleContentColor = Color.White
+    val bubbleBrush = if (message.mine) UnifiedMessageBubbleBrush else IncomingMessageBubbleBrush
+    val bubbleContentColor = if (message.mine) Color.White else Ink
+    val bubbleLinkColor = if (message.mine) Color.White.copy(alpha = 0.92f) else ForestDark
+    val bubbleDarkContent = !message.mine
     val pressInteraction = remember(message.id) { MutableInteractionSource() }
     val canInteract = interactive && message.kind != "call"
     val canSwipeReply = canInteract && onSwipeReply != null
@@ -8274,6 +8279,7 @@ internal fun MessageBubble(
                                     modifier = Modifier.fillMaxWidth()
                                         .padding(start = 9.dp, end = 9.dp, top = 7.dp),
                                     coloredBubble = true,
+                                    darkContent = bubbleDarkContent,
                                     onReplyClick = onReplyReferenceClick.takeIf { interactive }
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -8359,13 +8365,14 @@ internal fun MessageBubble(
                                     replyMessage = replyMessage,
                                     token = token,
                                     coloredBubble = true,
+                                    darkContent = bubbleDarkContent,
                                     onReplyClick = onReplyReferenceClick.takeIf { interactive }
                                 )
                                 if (message.replyToId > 0L || message.forwardedFromName.isNotBlank()) Spacer(Modifier.height(7.dp))
                                 LinkifiedMessageText(
                                     text = message.text,
                                     color = bubbleContentColor,
-                                    linkColor = Color.White.copy(alpha = 0.92f),
+                                    linkColor = bubbleLinkColor,
                                     style = MaterialTheme.typography.bodyLarge,
                                     interactive = interactive,
                                     onLongPress = { onLongPress(message) }
@@ -8564,6 +8571,7 @@ internal fun AudioMessageBubble(
                 replyMessage = replyMessage,
                 token = token,
                 coloredBubble = true,
+                darkContent = !message.mine,
                 onReplyClick = onReplyReferenceClick
             )
             if (message.replyToId > 0L || message.forwardedFromName.isNotBlank()) Spacer(Modifier.height(6.dp))
@@ -8664,6 +8672,7 @@ internal fun FileMessageBubble(
                 replyMessage = replyMessage,
                 token = token,
                 coloredBubble = true,
+                darkContent = !message.mine,
                 onReplyClick = onReplyReferenceClick
             )
             if (message.replyToId > 0L || message.forwardedFromName.isNotBlank()) Spacer(Modifier.height(8.dp))
