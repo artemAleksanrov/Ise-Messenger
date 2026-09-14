@@ -1240,7 +1240,7 @@ class MainActivity : ComponentActivity() {
 }
 
 internal enum class Screen {
-    Splash, Email, Code, Name, Chats, Archive, Settings, Chat, Profile, Group, Media, AvatarSelection, Avatar, Call
+    Splash, Email, Code, Name, Chats, Archive, Settings, Chat, Profile, Group, GroupSettings, Media, AvatarSelection, Avatar, Call
 }
 
 internal enum class ProfileSection { Media, Audio, Files, Links }
@@ -1558,6 +1558,7 @@ internal class MessengerController(context: Context, private val onCallFinished:
     private var socketReconnectAttempt = 0
     private var listUpdatesInFlight = 0
     private var chatReturnScreen = Screen.Chats
+    private var groupReturnScreen = Screen.Chats
     var state by mutableStateOf(AppState())
         private set
 
@@ -1926,6 +1927,7 @@ internal class MessengerController(context: Context, private val onCallFinished:
     }
 
     fun openCreateGroup() {
+        groupReturnScreen = Screen.Chats
         val gradientSeed = (UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE).coerceAtLeast(1L)
         state = state.copy(
             screen = Screen.Group,
@@ -1937,8 +1939,9 @@ internal class MessengerController(context: Context, private val onCallFinished:
 
     fun openGroupSettings() {
         val chat = state.currentChat?.takeIf { it.group && it.owner } ?: return
+        groupReturnScreen = state.screen
         state = state.copy(
-            screen = Screen.Group,
+            screen = Screen.GroupSettings,
             groupEditor = GroupEditorState(
                 chat = chat,
                 name = chat.name,
@@ -3236,7 +3239,7 @@ internal class MessengerController(context: Context, private val onCallFinished:
 
     fun openAvatarPreview(name: String, avatar: String, userId: Long) {
         val returnScreen = state.screen.takeIf {
-            it == Screen.Settings || it == Screen.Group || it == Screen.Profile || it == Screen.Chat
+            it == Screen.Settings || it == Screen.Group || it == Screen.GroupSettings || it == Screen.Profile || it == Screen.Chat
         } ?: return
         state = state.copy(
             screen = Screen.Avatar,
@@ -3251,7 +3254,9 @@ internal class MessengerController(context: Context, private val onCallFinished:
     }
 
     fun openAvatarSelection(uri: Uri) {
-        val returnScreen = state.screen.takeIf { it == Screen.Settings || it == Screen.Group } ?: return
+        val returnScreen = state.screen.takeIf {
+            it == Screen.Settings || it == Screen.Group || it == Screen.GroupSettings
+        } ?: return
         state = state.copy(
             screen = Screen.AvatarSelection,
             avatarSelectionUri = uri,
@@ -3273,7 +3278,7 @@ internal class MessengerController(context: Context, private val onCallFinished:
         val uri = state.avatarSelectionUri ?: return
         val returnScreen = state.avatarSelectionReturnScreen
         state = state.copy(screen = returnScreen, avatarSelectionUri = null)
-        if (returnScreen == Screen.Group) saveGroupAvatar(uri) else saveAvatar(uri)
+        if (returnScreen == Screen.Group || returnScreen == Screen.GroupSettings) saveGroupAvatar(uri) else saveAvatar(uri)
     }
 
     fun closeAvatarPreview() {
@@ -3342,8 +3347,10 @@ internal class MessengerController(context: Context, private val onCallFinished:
             Screen.Settings -> state = state.copy(screen = Screen.Chats)
             Screen.Profile -> state = state.copy(screen = Screen.Chat)
             Screen.Group -> {
-                val returnToChat = state.groupEditor?.chat != null && state.currentChat != null
-                state = state.copy(screen = if (returnToChat) Screen.Chat else Screen.Chats, groupEditor = null)
+                state = state.copy(screen = Screen.Chats, groupEditor = null)
+            }
+            Screen.GroupSettings -> {
+                state = state.copy(screen = groupReturnScreen, groupEditor = null)
             }
             Screen.Chat -> {
                 stopTyping()
@@ -5120,7 +5127,7 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
             controller.clearError()
         }
     }
-    BackHandler(enabled = state.screen in listOf(Screen.Code, Screen.Name, Screen.Archive, Screen.Settings, Screen.Group, Screen.Chat, Screen.Profile, Screen.AvatarSelection, Screen.Avatar, Screen.Call)) {
+    BackHandler(enabled = state.screen in listOf(Screen.Code, Screen.Name, Screen.Archive, Screen.Settings, Screen.Group, Screen.GroupSettings, Screen.Chat, Screen.Profile, Screen.AvatarSelection, Screen.Avatar, Screen.Call)) {
         controller.back()
     }
     CompositionLocalProvider(LocalConnectionStatusText provides connectionStatusText) {
@@ -5177,14 +5184,27 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
                                 state = state,
                                 editor = editor,
                                 updateName = controller::updateGroupDraftName,
-                                saveName = controller::applyGroupName,
                                 previewAvatar = controller::openAvatarSelection,
                                 removeAvatar = controller::removeGroupAvatar,
                                 openAvatar = controller::openAvatarPreview,
                                 updateSelection = controller::updateGroupSelection,
+                                createGroup = controller::createGroup,
+                                permissionError = controller::showPermissionError,
+                                errorState = snackbar,
+                                back = controller::back
+                            )
+                        }
+                        Screen.GroupSettings -> state.groupEditor?.let { editor ->
+                            GroupSettingsScreenRoute(
+                                state = state,
+                                editor = editor,
+                                updateName = controller::updateGroupDraftName,
+                                saveName = controller::applyGroupName,
+                                previewAvatar = controller::openAvatarSelection,
+                                removeAvatar = controller::removeGroupAvatar,
+                                openAvatar = controller::openAvatarPreview,
                                 addMembers = controller::addGroupMembers,
                                 removeMember = controller::removeGroupMember,
-                                createGroup = controller::createGroup,
                                 permissionError = controller::showPermissionError,
                                 errorState = snackbar,
                                 back = controller::back
@@ -5199,6 +5219,7 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
                                 token = state.token,
                                 openMedia = controller::openRemoteMediaPreview,
                                 openAvatar = controller::openAvatarPreview,
+                                editGroup = controller::openGroupSettings,
                                 messagesHasMore = state.messagesHasMore,
                                 loadingOlderMessages = state.loadingOlderMessages,
                                 loadOlderMessages = controller::loadOlderMessages,
@@ -5302,8 +5323,8 @@ internal fun isOpeningNewScreen(from: Screen, to: Screen): Boolean = when {
     from == Screen.Chats -> to in listOf(Screen.Archive, Screen.Settings, Screen.Group, Screen.Chat, Screen.Call)
     from == Screen.Archive -> to in listOf(Screen.Chat, Screen.Call)
     from == Screen.Chat -> to in listOf(Screen.Profile, Screen.Media, Screen.Group, Screen.Avatar, Screen.Call)
-    from == Screen.Profile -> to in listOf(Screen.Media, Screen.Avatar, Screen.Call)
-    from == Screen.Settings || from == Screen.Group -> to in listOf(Screen.AvatarSelection, Screen.Avatar, Screen.Call)
+    from == Screen.Profile -> to in listOf(Screen.GroupSettings, Screen.Media, Screen.Avatar, Screen.Call)
+    from == Screen.Settings || from == Screen.Group || from == Screen.GroupSettings -> to in listOf(Screen.AvatarSelection, Screen.Avatar, Screen.Call)
     from == Screen.AvatarSelection -> to == Screen.Avatar
     else -> false
 }

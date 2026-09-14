@@ -366,26 +366,22 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun GroupScreenRoute(
-    state: AppState, editor: GroupEditorState, updateName: (String) -> Unit, saveName: () -> Unit,
+    state: AppState, editor: GroupEditorState, updateName: (String) -> Unit,
     previewAvatar: (Uri) -> Unit, removeAvatar: () -> Unit, openAvatar: (String, String, Long) -> Unit,
-    updateSelection: (Set<Long>) -> Unit, addMembers: (Set<Long>) -> Unit,
-    removeMember: (GroupMember) -> Unit, createGroup: () -> Unit, permissionError: () -> Unit,
+    updateSelection: (Set<Long>) -> Unit, createGroup: () -> Unit, permissionError: () -> Unit,
     errorState: SnackbarHostState, back: () -> Unit
-) = GroupEditorScreenContent(state, editor, updateName, saveName, previewAvatar, removeAvatar, openAvatar, updateSelection, addMembers, removeMember, createGroup, permissionError, errorState, back)
+) = GroupCreationScreenContent(state, editor, updateName, previewAvatar, removeAvatar, openAvatar, updateSelection, createGroup, permissionError, errorState, back)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun GroupEditorScreenContent(
+internal fun GroupCreationScreenContent(
     state: AppState,
     editor: GroupEditorState,
     updateName: (String) -> Unit,
-    saveName: () -> Unit,
     previewAvatar: (Uri) -> Unit,
     removeAvatar: () -> Unit,
     openAvatar: (String, String, Long) -> Unit,
     updateSelection: (Set<Long>) -> Unit,
-    addMembers: (Set<Long>) -> Unit,
-    removeMember: (GroupMember) -> Unit,
     createGroup: () -> Unit,
     permissionError: () -> Unit,
     errorState: SnackbarHostState,
@@ -394,15 +390,11 @@ internal fun GroupEditorScreenContent(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    val editing = editor.chat != null
     val candidates = remember(state.chats) {
         state.chats.filter { !it.saved && !it.group && it.userId > 0L }.distinctBy { it.userId }
     }
     val participants = remember(editor.members, editor.selectedMemberIds, candidates, state.userName, state.userAvatar, state.userId) {
-        if (editing) {
-            editor.members
-        } else {
-            listOf(
+        listOf(
                 GroupMember(
                     id = state.userId,
                     name = state.userName.ifBlank { "Пользователь" },
@@ -415,7 +407,6 @@ internal fun GroupEditorScreenContent(
             ) + candidates.filter { it.userId in editor.selectedMemberIds }.map {
                 GroupMember(it.userId, it.name, it.email, it.avatar, false, it.online, it.lastSeenAt)
             }
-        }
     }
     var menuVisible by remember { mutableStateOf(false) }
     var galleryVisible by remember { mutableStateOf(false) }
@@ -430,7 +421,7 @@ internal fun GroupEditorScreenContent(
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         CenteredTopBar(
-            title = if (editing) "Настройки группы" else "Создать группу",
+            title = "Создать группу",
             startContent = { RoundAction(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", back) },
             endContent = {
             Box {
@@ -493,22 +484,7 @@ internal fun GroupEditorScreenContent(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = {
                     focusManager.clearFocus()
-                    if (editing) saveName()
                 }),
-                trailingIcon = if (editing) {
-                    {
-                        IconButton(
-                            onClick = {
-                                focusManager.clearFocus()
-                                saveName()
-                            },
-                            enabled = !state.loading
-                        ) {
-                            if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), color = Forest, strokeWidth = 2.dp)
-                            else Icon(Icons.Rounded.Done, contentDescription = "Применить название", tint = Forest)
-                        }
-                    }
-                } else null,
                 shape = RoundedCornerShape(20.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Forest,
@@ -525,20 +501,13 @@ internal fun GroupEditorScreenContent(
                 GroupMemberRow(
                     member = member,
                     openAvatar = { openAvatar(member.name, member.avatar, member.id) },
-                    remove = if (member.owner) null else {
-                        {
-                            if (editing) removeMember(member)
-                            else updateSelection(editor.selectedMemberIds - member.id)
-                        }
-                    },
+                    remove = if (member.owner) null else {{ updateSelection(editor.selectedMemberIds - member.id) }},
                     enabled = !state.loading
                 )
             }
         }
-        if (!editing) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                PrimaryButton("Создать группу", state.loading, onClick = createGroup)
-            }
+        Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            PrimaryButton("Создать группу", state.loading, onClick = createGroup)
         }
     }
     if (galleryVisible) {
@@ -565,8 +534,7 @@ internal fun GroupEditorScreenContent(
         }
     }
     if (memberPickerVisible) {
-        val existingIds = if (editing) editor.members.mapTo(mutableSetOf()) { it.id } else emptySet()
-        val unavailableIds = if (editing) existingIds else editor.selectedMemberIds
+        val unavailableIds = editor.selectedMemberIds
         val available = candidates.filter { it.userId !in unavailableIds }
         MembersSelectionSheet(
             chats = available,
@@ -576,7 +544,7 @@ internal fun GroupEditorScreenContent(
             dismiss = { memberPickerVisible = false },
             confirm = { selected ->
                 memberPickerVisible = false
-                if (editing) addMembers(selected) else updateSelection(editor.selectedMemberIds + selected)
+                updateSelection(editor.selectedMemberIds + selected)
             }
         )
     }

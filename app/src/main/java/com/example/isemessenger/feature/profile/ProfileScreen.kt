@@ -372,12 +372,13 @@ import kotlin.math.roundToInt
 internal fun ProfileScreenRoute(
     chat: ChatItem, messages: List<MessageItem>, groupMembers: List<GroupMember>, token: String, openMedia: (MessageItem) -> Unit,
     openAvatar: (String, String, Long) -> Unit,
+    editGroup: () -> Unit,
     messagesHasMore: Boolean, loadingOlderMessages: Boolean, loadOlderMessages: () -> Unit,
     startCall: (Boolean) -> Unit, callPermissionError: () -> Unit,
     renameChat: (String) -> Unit, archiveChat: (Boolean) -> Unit, clearChat: () -> Unit, deleteChat: () -> Unit,
     errorState: SnackbarHostState, back: () -> Unit
 ) = ChatProfileScreenContent(
-    chat, messages, groupMembers, token, openMedia, openAvatar, messagesHasMore, loadingOlderMessages, loadOlderMessages,
+    chat, messages, groupMembers, token, openMedia, openAvatar, editGroup, messagesHasMore, loadingOlderMessages, loadOlderMessages,
     startCall, callPermissionError, renameChat, archiveChat, clearChat, deleteChat, errorState, back
 )
 
@@ -390,6 +391,7 @@ internal fun ChatProfileScreenContent(
     token: String,
     openMedia: (MessageItem) -> Unit,
     openAvatar: (String, String, Long) -> Unit,
+    editGroup: () -> Unit,
     messagesHasMore: Boolean,
     loadingOlderMessages: Boolean,
     loadOlderMessages: () -> Unit,
@@ -459,6 +461,9 @@ internal fun ChatProfileScreenContent(
                 ) {
                     RoundAction(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", back)
                     Spacer(Modifier.weight(1f))
+                    if (chat.group && chat.owner) {
+                        RoundAction(Icons.Rounded.Edit, "Настройки группы", editGroup)
+                    }
                 }
                 Column(
                     Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
