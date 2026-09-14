@@ -370,14 +370,14 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun ProfileScreenRoute(
-    chat: ChatItem, messages: List<MessageItem>, token: String, openMedia: (MessageItem) -> Unit,
+    chat: ChatItem, messages: List<MessageItem>, groupMembers: List<GroupMember>, token: String, openMedia: (MessageItem) -> Unit,
     openAvatar: (String, String, Long) -> Unit,
     messagesHasMore: Boolean, loadingOlderMessages: Boolean, loadOlderMessages: () -> Unit,
     startCall: (Boolean) -> Unit, callPermissionError: () -> Unit,
     renameChat: (String) -> Unit, archiveChat: (Boolean) -> Unit, clearChat: () -> Unit, deleteChat: () -> Unit,
     errorState: SnackbarHostState, back: () -> Unit
 ) = ChatProfileScreenContent(
-    chat, messages, token, openMedia, openAvatar, messagesHasMore, loadingOlderMessages, loadOlderMessages,
+    chat, messages, groupMembers, token, openMedia, openAvatar, messagesHasMore, loadingOlderMessages, loadOlderMessages,
     startCall, callPermissionError, renameChat, archiveChat, clearChat, deleteChat, errorState, back
 )
 
@@ -386,6 +386,7 @@ internal fun ProfileScreenRoute(
 internal fun ChatProfileScreenContent(
     chat: ChatItem,
     messages: List<MessageItem>,
+    groupMembers: List<GroupMember>,
     token: String,
     openMedia: (MessageItem) -> Unit,
     openAvatar: (String, String, Long) -> Unit,
@@ -411,12 +412,16 @@ internal fun ChatProfileScreenContent(
     var clearConfirmationVisible by remember(chat.id) { mutableStateOf(false) }
     var deleteConfirmationVisible by remember(chat.id) { mutableStateOf(false) }
     var renameSheetVisible by remember(chat.id) { mutableStateOf(false) }
+    var membersSheetVisible by remember(chat.id) { mutableStateOf(false) }
     var pendingVideoCall by remember(chat.id) { mutableStateOf<Boolean?>(null) }
     var sectionsExpansion by remember(chat.id) { mutableFloatStateOf(0f) }
     var sectionsDragging by remember(chat.id) { mutableStateOf(false) }
+    var sectionButtonDragging by remember(chat.id) { mutableStateOf(false) }
+    var draggedSectionPosition by remember(chat.id) { mutableStateOf<Float?>(null) }
+    var draggedSectionTarget by remember(chat.id) { mutableIntStateOf(0) }
     var profileHeaderHeight by remember(chat.id) { mutableIntStateOf(0) }
     var sectionsSettleJob by remember { mutableStateOf<Job?>(null) }
-    val sectionsMoving = sectionsDragging || sectionsExpansion in 0.001f..0.999f
+    val sectionsMoving = sectionsDragging || sectionButtonDragging || sectionsExpansion in 0.001f..0.999f
     val density = LocalDensity.current
     val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val video = pendingVideoCall
@@ -537,6 +542,10 @@ internal fun ChatProfileScreenContent(
                             ChatProfileAction(Icons.Rounded.Delete, "Очистить чат", Modifier.weight(1f)) {
                                 clearConfirmationVisible = true
                             }
+                        } else {
+                            ChatProfileAction(Icons.Rounded.Groups, "Участники", Modifier.weight(1f)) {
+                                membersSheetVisible = true
+                            }
                         }
                         Box(Modifier.weight(1f)) {
                             ChatProfileAction(Icons.Rounded.MoreHoriz, "Ещё", Modifier.fillMaxWidth()) { moreMenuVisible = true }
@@ -656,14 +665,46 @@ internal fun ChatProfileScreenContent(
         ) {
             val spacing = 2.dp
             val sectionWidth = (maxWidth - spacing * (ProfileSection.entries.size - 1)) / ProfileSection.entries.size
+            val sectionStepPx = with(density) { (sectionWidth + spacing).toPx() }.coerceAtLeast(1f)
+            val maximumSectionPosition = (ProfileSection.entries.size - 1).toFloat()
             Box(
                 Modifier.offset {
-                    val position = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
-                        .coerceIn(0f, (ProfileSection.entries.size - 1).toFloat())
+                    val position = draggedSectionPosition ?: (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+                        .coerceIn(0f, maximumSectionPosition)
                     IntOffset(((sectionWidth + spacing).toPx() * position).roundToInt(), 0)
                 }.width(sectionWidth).height(40.dp).clip(RoundedCornerShape(12.dp)).background(Forest)
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+            Row(
+                Modifier.fillMaxWidth().draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        val nextPosition = ((draggedSectionPosition
+                            ?: (pagerState.currentPage + pagerState.currentPageOffsetFraction)) + delta / sectionStepPx)
+                            .coerceIn(0f, maximumSectionPosition)
+                        draggedSectionPosition = nextPosition
+                        val target = nextPosition.roundToInt().coerceIn(ProfileSection.entries.indices)
+                        if (target != draggedSectionTarget) {
+                            draggedSectionTarget = target
+                            scope.launch { pagerState.scrollToPage(target) }
+                        }
+                    },
+                    onDragStarted = {
+                        sectionButtonDragging = true
+                        draggedSectionTarget = pagerState.currentPage
+                        draggedSectionPosition = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+                            .coerceIn(0f, maximumSectionPosition)
+                    },
+                    onDragStopped = {
+                        val target = (draggedSectionPosition ?: pagerState.currentPage.toFloat())
+                            .roundToInt()
+                            .coerceIn(ProfileSection.entries.indices)
+                        draggedSectionPosition = null
+                        sectionButtonDragging = false
+                        scope.launch { pagerState.animateScrollToPage(target) }
+                    }
+                ),
+                horizontalArrangement = Arrangement.spacedBy(spacing)
+            ) {
                 ProfileSection.entries.forEach { section ->
                     val label = when (section) {
                         ProfileSection.Media -> "Медиа"
@@ -811,6 +852,13 @@ internal fun ChatProfileScreenContent(
                 renameSheetVisible = false
                 renameChat("")
             }
+        )
+    }
+    if (membersSheetVisible && chat.group) {
+        GroupMembersSheet(
+            members = groupMembers,
+            openAvatar = { member -> openAvatar(member.name, member.avatar, member.id) },
+            dismiss = { membersSheetVisible = false }
         )
     }
 }

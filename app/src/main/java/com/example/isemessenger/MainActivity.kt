@@ -5195,6 +5195,7 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
                             ProfileScreenRoute(
                                 chat = chat,
                                 messages = state.messages,
+                                groupMembers = state.groupMembers,
                                 token = state.token,
                                 openMedia = controller::openRemoteMediaPreview,
                                 openAvatar = controller::openAvatarPreview,
@@ -5678,6 +5679,10 @@ internal fun AttachmentSheet(
     BottomSheetWindowBehavior()
     val sectionPagerState = rememberPagerState(initialPage = initialSection.ordinal) { AttachmentSection.entries.size }
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var sectionButtonDragging by remember { mutableStateOf(false) }
+    var draggedSectionPosition by remember { mutableStateOf<Float?>(null) }
+    var draggedSectionTarget by remember { mutableIntStateOf(initialSection.ordinal) }
     val section = AttachmentSection.entries[sectionPagerState.currentPage]
     val selectedMediaCount = selectedMedia.count { it.kind == "image" || it.kind == "video" }
     val selectedAudioCount = selectedMedia.count { it.kind == "audio" }
@@ -5708,15 +5713,49 @@ internal fun AttachmentSheet(
             val sectionSpacing = 4.dp
             val sectionCount = AttachmentSection.entries.size
             val sectionWidth = (maxWidth - sectionSpacing * (sectionCount - 1)) / sectionCount
+            val sectionStepPx = with(density) { (sectionWidth + sectionSpacing).toPx() }.coerceAtLeast(1f)
+            val maximumSectionPosition = (sectionCount - 1).toFloat()
             Box(
                 Modifier.offset {
-                    val position = (sectionPagerState.currentPage + sectionPagerState.currentPageOffsetFraction)
-                        .coerceIn(0f, (sectionCount - 1).toFloat())
+                    val position = draggedSectionPosition
+                        ?: (sectionPagerState.currentPage + sectionPagerState.currentPageOffsetFraction)
+                            .coerceIn(0f, maximumSectionPosition)
                     IntOffset(((sectionWidth + sectionSpacing).roundToPx() * position).toInt(), 0)
                 }.width(sectionWidth).height(40.dp)
                     .clip(RoundedCornerShape(12.dp)).background(Forest)
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(sectionSpacing)) {
+            Row(
+                Modifier.fillMaxWidth().draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        val nextPosition = ((draggedSectionPosition
+                            ?: (sectionPagerState.currentPage + sectionPagerState.currentPageOffsetFraction)) +
+                            delta / sectionStepPx).coerceIn(0f, maximumSectionPosition)
+                        draggedSectionPosition = nextPosition
+                        val target = nextPosition.roundToInt().coerceIn(AttachmentSection.entries.indices)
+                        if (selectedMedia.isEmpty() && target != draggedSectionTarget) {
+                            draggedSectionTarget = target
+                            scope.launch { sectionPagerState.scrollToPage(target) }
+                        }
+                    },
+                    onDragStarted = {
+                        sectionButtonDragging = true
+                        draggedSectionTarget = sectionPagerState.currentPage
+                        draggedSectionPosition =
+                            (sectionPagerState.currentPage + sectionPagerState.currentPageOffsetFraction)
+                                .coerceIn(0f, maximumSectionPosition)
+                    },
+                    onDragStopped = {
+                        val target = (draggedSectionPosition ?: sectionPagerState.currentPage.toFloat())
+                            .roundToInt()
+                            .coerceIn(AttachmentSection.entries.indices)
+                        draggedSectionPosition = null
+                        sectionButtonDragging = false
+                        openSection(AttachmentSection.entries[target])
+                    }
+                ),
+                horizontalArrangement = Arrangement.spacedBy(sectionSpacing)
+            ) {
                 AttachmentSectionButton(
                     label = "Медиа",
                     selected = section == AttachmentSection.Media,
@@ -5740,7 +5779,7 @@ internal fun AttachmentSheet(
         HorizontalPager(
             state = sectionPagerState,
             key = { AttachmentSection.entries[it] },
-            userScrollEnabled = selectedMedia.isEmpty(),
+            userScrollEnabled = selectedMedia.isEmpty() && !sectionButtonDragging,
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) { page ->
             val activeSection = AttachmentSection.entries[page]
