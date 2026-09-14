@@ -164,6 +164,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.MoreVert
@@ -436,6 +437,16 @@ internal fun SettingsScreenContent(
                     shadowElevation = 2.dp
                 ) {
                     DropdownMenuItem(
+                        text = { Text("Сменить почту") },
+                        leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null, tint = Forest) },
+                        onClick = {
+                            menuVisible = false
+                            pendingEmail = ""
+                            emailChangeStep = EmailChangeStep.Email
+                        }
+                    )
+                    HorizontalDivider(color = Line, modifier = Modifier.padding(vertical = 6.dp))
+                    DropdownMenuItem(
                         text = { Text("Сменить аватар") },
                         leadingIcon = { Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = Forest) },
                         onClick = openGallery
@@ -524,11 +535,6 @@ internal fun SettingsScreenContent(
                 ),
                 modifier = Modifier.fillMaxWidth().height(60.dp)
             )
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton("Сменить почту", loading = false, enabled = !loading) {
-                pendingEmail = ""
-                emailChangeStep = EmailChangeStep.Email
-            }
         }
     }
     when (emailChangeStep) {

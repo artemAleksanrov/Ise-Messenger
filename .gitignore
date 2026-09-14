@@ -1,15 +1,49 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+# Operating-system and editor files
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Gradle, Kotlin and Android generated files
+.gradle/
+.kotlin/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Machine-local configuration
 local.properties
+*.local.properties
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+secrets.properties
+secret.properties
+credentials.properties
+keystore.properties
+signing.properties
+**/google-services.json
+
+# Signing keys and certificates
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Generated application packages and reports
+*.apk
+*.aab
+*.apks
+*.aar
+*.mapping
+*.hprof
+*.log
+*.tmp

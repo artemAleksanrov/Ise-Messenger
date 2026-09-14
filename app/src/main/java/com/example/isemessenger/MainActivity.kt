@@ -7442,8 +7442,7 @@ internal fun MediaMessageThumbnail(
     message: MessageItem,
     token: String,
     modifier: Modifier = Modifier,
-    fillBounds: Boolean = false,
-    expandToPanel: Boolean = false
+    fillBounds: Boolean = false
 ) {
     val context = LocalContext.current
     val cacheKey = remember(message.kind, message.mediaUrl) {
@@ -7459,12 +7458,11 @@ internal fun MediaMessageThumbnail(
     val previewSize = remember(message.mediaWidth, message.mediaHeight) {
         chatMediaPreviewSize(message.mediaWidth, message.mediaHeight)
     }
-    val previewWidth = if (expandToPanel && previewSize.first < 250.dp) 250.dp else previewSize.first
     val thumbnailShape = if (fillBounds) RoundedCornerShape(0.dp) else RoundedCornerShape(18.dp)
     val thumbnailSize = if (fillBounds) {
         modifier.fillMaxSize()
     } else {
-        modifier.width(previewWidth).height(previewSize.second)
+        modifier.width(previewSize.first).height(previewSize.second)
     }
     val thumbnailFrame = thumbnailSize.clip(thumbnailShape).background(ForestDark)
     LaunchedEffect(message.id, message.mediaUrl) {
@@ -7479,7 +7477,7 @@ internal fun MediaMessageThumbnail(
         thumbnailFrame,
         contentAlignment = Alignment.Center
     ) {
-        bitmap?.let { Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+        bitmap?.let { Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
         if (bitmap == null) MediaLoadingIndicator(progress = loadProgress)
         if (message.kind == "video" && duration > 0L) {
             Text(
@@ -8265,8 +8263,13 @@ internal fun MessageBubble(
                         } ?: message
                         val hasMessageContext = contextMessage.replyToId > 0L || contextMessage.forwardedFromName.isNotBlank()
                         val mediaBubbleShape = RoundedCornerShape(18.dp)
+                        val mediaContentWidth = if (displayedMedia.size > 1) {
+                            250.dp
+                        } else {
+                            chatMediaPreviewSize(message.mediaWidth, message.mediaHeight).first
+                        }
                         Column(
-                            Modifier.width(250.dp)
+                            Modifier.width(mediaContentWidth + 4.dp)
                                 .clip(mediaBubbleShape)
                                 .background(bubbleBrush),
                             horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start
@@ -8285,7 +8288,7 @@ internal fun MessageBubble(
                                 Spacer(Modifier.height(4.dp))
                             }
                             Box(
-                                Modifier.fillMaxWidth().padding(
+                                Modifier.padding(
                                     start = 2.dp,
                                     end = 2.dp,
                                     top = if (hasMessageContext) 0.dp else 2.dp,
@@ -8303,8 +8306,7 @@ internal fun MessageBubble(
                                 } else {
                                     MediaMessageThumbnail(
                                         message,
-                                        token,
-                                        expandToPanel = true
+                                        token
                                     )
                                 }
                                 if (showMetadata) {
