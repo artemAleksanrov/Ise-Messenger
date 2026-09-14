@@ -434,29 +434,32 @@ internal fun AvatarPreviewScreenContent(preview: AvatarPreviewItem, dismiss: () 
     var image by remember(preview.avatar) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var loading by remember(preview.avatar) { mutableStateOf(preview.avatar.isNotBlank()) }
     var chromeVisible by remember(preview.userId, preview.avatar) { mutableStateOf(true) }
+    var zoomed by remember(preview.userId, preview.avatar) { mutableStateOf(false) }
     LaunchedEffect(preview.avatar) {
         image = if (preview.avatar.isBlank()) null else loadPersistentAvatar(context, preview.avatar)?.asImageBitmap()
         loading = false
     }
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        val interactionSource = remember { MutableInteractionSource() }
-        Box(
-            Modifier.fillMaxSize().clickable(interactionSource = interactionSource, indication = null) {
-                chromeVisible = !chromeVisible
-            },
-            contentAlignment = Alignment.Center
-        ) {
-            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                val avatarSize = minOf(maxWidth - 40.dp, maxHeight - 180.dp).coerceAtMost(420.dp)
-                when {
-                    image != null -> Image(
-                        image!!,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(avatarSize).clip(CircleShape)
-                    )
-                    loading -> MediaLoadingIndicator()
-                    else -> Avatar(preview.name, avatarSize, "", preview.userId)
+        when {
+            image != null -> PreviewImage(
+                image = image!!,
+                onTap = { if (!zoomed) chromeVisible = !chromeVisible },
+                onZoomChanged = { isZoomed ->
+                    zoomed = isZoomed
+                    if (isZoomed) chromeVisible = false
+                }
+            )
+            loading -> MediaLoadingIndicator()
+            else -> {
+                val interactionSource = remember { MutableInteractionSource() }
+                BoxWithConstraints(
+                    Modifier.fillMaxSize().clickable(interactionSource = interactionSource, indication = null) {
+                        chromeVisible = !chromeVisible
+                    },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val avatarSize = minOf(maxWidth - 40.dp, maxHeight - 180.dp).coerceAtMost(420.dp)
+                    Avatar(preview.name, avatarSize, "", preview.userId)
                 }
             }
         }

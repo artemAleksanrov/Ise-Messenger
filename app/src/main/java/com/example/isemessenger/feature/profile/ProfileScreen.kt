@@ -371,12 +371,13 @@ import kotlin.math.roundToInt
 @Composable
 internal fun ProfileScreenRoute(
     chat: ChatItem, messages: List<MessageItem>, token: String, openMedia: (MessageItem) -> Unit,
+    openAvatar: (String, String, Long) -> Unit,
     messagesHasMore: Boolean, loadingOlderMessages: Boolean, loadOlderMessages: () -> Unit,
     startCall: (Boolean) -> Unit, callPermissionError: () -> Unit,
     renameChat: (String) -> Unit, archiveChat: (Boolean) -> Unit, clearChat: () -> Unit, deleteChat: () -> Unit,
     errorState: SnackbarHostState, back: () -> Unit
 ) = ChatProfileScreenContent(
-    chat, messages, token, openMedia, messagesHasMore, loadingOlderMessages, loadOlderMessages,
+    chat, messages, token, openMedia, openAvatar, messagesHasMore, loadingOlderMessages, loadOlderMessages,
     startCall, callPermissionError, renameChat, archiveChat, clearChat, deleteChat, errorState, back
 )
 
@@ -387,6 +388,7 @@ internal fun ChatProfileScreenContent(
     messages: List<MessageItem>,
     token: String,
     openMedia: (MessageItem) -> Unit,
+    openAvatar: (String, String, Long) -> Unit,
     messagesHasMore: Boolean,
     loadingOlderMessages: Boolean,
     loadOlderMessages: () -> Unit,
@@ -457,7 +459,22 @@ internal fun ChatProfileScreenContent(
                     Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Box {
+                    val avatarInteraction = remember(chat.id) { MutableInteractionSource() }
+                    Box(
+                        Modifier.clip(CircleShape).clickable(
+                            interactionSource = avatarInteraction,
+                            indication = null
+                        ) {
+                            if (!chat.saved) {
+                                val previewId = if (chat.group) {
+                                    chat.avatarGradientSeed.takeIf { it != 0L } ?: chat.id
+                                } else {
+                                    chat.userId
+                                }
+                                openAvatar(chat.name, chat.avatar, previewId)
+                            }
+                        }
+                    ) {
                         ChatAvatar(chat, 112.dp)
                         if (!chat.saved && !chat.group && chat.online) {
                             OnlineIndicator(

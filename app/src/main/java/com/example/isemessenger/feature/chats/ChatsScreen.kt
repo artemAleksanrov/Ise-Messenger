@@ -375,6 +375,7 @@ internal fun ChatsScreen(controller: MessengerController, archived: Boolean) {
         drafts = state.drafts,
         loading = state.loading,
         userName = state.userName,
+        userEmail = state.email,
         userAvatar = state.userAvatar,
         userId = state.userId,
         availableUpdate = state.availableUpdate,
@@ -401,6 +402,7 @@ internal fun ChatsScreenContent(
     drafts: Map<Long, String>,
     loading: Boolean,
     userName: String,
+    userEmail: String,
     userAvatar: String,
     userId: Long,
     availableUpdate: AppUpdateInfo?,
@@ -462,6 +464,7 @@ internal fun ChatsScreenContent(
             if (!archived) {
                 ChatsSidePanel(
                     displayName = displayName,
+                    email = userEmail,
                     avatar = userAvatar,
                     userId = userId,
                     archivedUnreadLabel = archivedUnreadLabel,
@@ -722,6 +725,7 @@ private fun AppUpdateBar(
 @Composable
 private fun ChatsSidePanel(
     displayName: String,
+    email: String,
     avatar: String,
     userId: Long,
     archivedUnreadLabel: String,
@@ -756,6 +760,16 @@ private fun ChatsSidePanel(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (email.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        email,
+                        color = Muted,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             HorizontalDivider(color = Line, modifier = Modifier.padding(vertical = 6.dp))
             NavigationDrawerItem(

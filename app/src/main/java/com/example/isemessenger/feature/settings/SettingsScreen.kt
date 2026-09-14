@@ -496,6 +496,13 @@ internal fun SettingsScreenContent(
                 Avatar(userName.ifBlank { "Пользователь" }, 104.dp, userAvatar, userId)
             }
             Spacer(Modifier.height(10.dp))
+            Text(
+                userName.ifBlank { "Пользователь" },
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
             Text(email, color = Muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(22.dp))
             OutlinedTextField(

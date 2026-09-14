@@ -3234,7 +3234,21 @@ internal class MessengerController(context: Context, private val onCallFinished:
         )
     }
 
-    fun openAvatarPreview(@Suppress("UNUSED_PARAMETER") name: String, @Suppress("UNUSED_PARAMETER") avatar: String, @Suppress("UNUSED_PARAMETER") userId: Long) = Unit
+    fun openAvatarPreview(name: String, avatar: String, userId: Long) {
+        val returnScreen = state.screen.takeIf {
+            it == Screen.Settings || it == Screen.Group || it == Screen.Profile || it == Screen.Chat
+        } ?: return
+        state = state.copy(
+            screen = Screen.Avatar,
+            avatarPreview = AvatarPreviewItem(
+                name = name.ifBlank { "Пользователь" },
+                avatar = avatar,
+                userId = userId,
+                returnScreen = returnScreen
+            ),
+            error = null
+        )
+    }
 
     fun openAvatarSelection(uri: Uri) {
         val returnScreen = state.screen.takeIf { it == Screen.Settings || it == Screen.Group } ?: return
@@ -5183,6 +5197,7 @@ internal fun MessengerApp(controller: MessengerController, activity: MainActivit
                                 messages = state.messages,
                                 token = state.token,
                                 openMedia = controller::openRemoteMediaPreview,
+                                openAvatar = controller::openAvatarPreview,
                                 messagesHasMore = state.messagesHasMore,
                                 loadingOlderMessages = state.loadingOlderMessages,
                                 loadOlderMessages = controller::loadOlderMessages,
