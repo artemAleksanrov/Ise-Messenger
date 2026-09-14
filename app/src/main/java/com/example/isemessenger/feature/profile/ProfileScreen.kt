@@ -690,7 +690,7 @@ internal fun ChatProfileScreenContent(
                         val target = nextPosition.roundToInt().coerceIn(ProfileSection.entries.indices)
                         if (target != draggedSectionTarget) {
                             draggedSectionTarget = target
-                            scope.launch { pagerState.scrollToPage(target) }
+                            scope.launch { pagerState.animateScrollToPage(target) }
                         }
                     },
                     onDragStarted = {

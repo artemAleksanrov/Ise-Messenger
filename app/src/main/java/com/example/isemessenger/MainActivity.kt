@@ -5756,7 +5756,7 @@ internal fun AttachmentSheet(
                         val target = nextPosition.roundToInt().coerceIn(AttachmentSection.entries.indices)
                         if (selectedMedia.isEmpty() && target != draggedSectionTarget) {
                             draggedSectionTarget = target
-                            scope.launch { sectionPagerState.scrollToPage(target) }
+                            scope.launch { sectionPagerState.animateScrollToPage(target) }
                         }
                     },
                     onDragStarted = {
