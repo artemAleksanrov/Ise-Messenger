@@ -3234,6 +3234,7 @@ internal class MessengerController(context: Context, private val onCallFinished:
     }
 
     fun openAvatarPreview(name: String, avatar: String, userId: Long) {
+        if (avatar.isBlank()) return
         val returnScreen = state.screen.takeIf {
             it == Screen.Settings || it == Screen.Group || it == Screen.GroupSettings || it == Screen.Profile || it == Screen.Chat
         } ?: return
