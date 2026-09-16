@@ -7093,7 +7093,7 @@ internal fun ReplyComposerPanel(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier.fillMaxWidth().background(SoftSurface).padding(start = 16.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
+        modifier.fillMaxWidth().background(Paper).padding(start = 16.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.width(3.dp).height(36.dp).clip(CircleShape).background(Forest))
@@ -9178,8 +9178,8 @@ internal fun MessageComposer(
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = SoftSurface,
-                unfocusedContainerColor = SoftSurface,
+                focusedContainerColor = Paper,
+                unfocusedContainerColor = Paper,
                 cursorColor = Forest,
                 focusedLabelColor = Forest,
                 unfocusedLabelColor = Muted

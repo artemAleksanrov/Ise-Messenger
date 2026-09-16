@@ -466,7 +466,7 @@ internal fun ChatScreenContent(
     val view = LocalView.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val navigationBarColor = SoftSurface.toArgb()
+    val navigationBarColor = Paper.toArgb()
     DisposableEffect(view, navigationBarColor) {
         val window = view.context.findMainActivity()?.window
         @Suppress("DEPRECATION")
@@ -854,7 +854,17 @@ internal fun ChatScreenContent(
                 )
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(
+            Modifier.weight(1f).fillMaxWidth().background(
+                Brush.linearGradient(
+                    listOf(
+                        Mint,
+                        Canvas,
+                        Color(0xFFE3F2EB)
+                    )
+                )
+            )
+        ) {
             if (messages.isEmpty() && !loading) {
                 Text(
                     when {
@@ -944,8 +954,8 @@ internal fun ChatScreenContent(
                         modifier = Modifier.size(48.dp),
                         enabled = scrollDownVisible,
                         shape = CircleShape,
-                        color = SoftSurface,
-                        shadowElevation = 0.dp
+                        color = Paper,
+                        shadowElevation = 2.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -964,7 +974,7 @@ internal fun ChatScreenContent(
                     }
             }
         }
-        Column(Modifier.fillMaxWidth().background(SoftSurface).navigationBarsPadding()) {
+        Column(Modifier.fillMaxWidth().background(Paper).navigationBarsPadding()) {
         val replyPanelHeight = 66.dp
         val replyPanelHeightPx = with(LocalDensity.current) { replyPanelHeight.toPx() }
         Box(
