@@ -957,7 +957,7 @@ internal fun ChatScreenContent(
                     Surface(
                         onClick = {
                             scope.launch {
-                                listState.scrollToItem(0, 0)
+                                listState.animateScrollToItem(0, 0)
                                 newMessagesBelow = 0
                             }
                         },
