@@ -1392,7 +1392,6 @@ internal fun groupMediaMessages(messages: List<MessageItem>): List<ChatMessageEn
     messages.forEach { message ->
         val previous = grouped.lastOrNull()
         val belongsToPrevious = previous != null &&
-                previous.messages.size < 4 &&
                 message.mediaGroupId.isNotBlank() &&
                 (message.kind == "image" || message.kind == "video") &&
                 previous.primary.mediaGroupId == message.mediaGroupId &&
@@ -2978,9 +2977,10 @@ internal class MessengerController(context: Context, private val onCallFinished:
         } else {
             buildMap {
                 outgoing.filter { it.kind == "audio" }.forEach { item -> put(item.selectionKey(), "") }
-                outgoing.filter { it.kind == "image" || it.kind == "video" }.chunked(4).forEach { group ->
-                    val groupId = if (outgoing.size == 1) "" else UUID.randomUUID().toString()
-                    group.forEach { item -> put(item.selectionKey(), groupId) }
+                val visualMedia = outgoing.filter { it.kind == "image" || it.kind == "video" }
+                val groupId = if (visualMedia.size > 1) UUID.randomUUID().toString() else ""
+                visualMedia.forEach { item ->
+                    put(item.selectionKey(), groupId)
                 }
             }
         }
@@ -7552,7 +7552,14 @@ internal fun MediaMessageThumbnail(
         thumbnailFrame,
         contentAlignment = Alignment.Center
     ) {
-        bitmap?.let { Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+        bitmap?.let {
+            Image(
+                it,
+                contentDescription = null,
+                contentScale = if (fillBounds) ContentScale.Crop else ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         if (bitmap == null) MediaLoadingIndicator(progress = loadProgress)
         if (message.kind == "video" && duration > 0L) {
             Text(
