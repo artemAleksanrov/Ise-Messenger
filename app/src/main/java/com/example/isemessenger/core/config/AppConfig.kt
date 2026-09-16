@@ -23,7 +23,34 @@ internal const val NotificationReplyAction = "com.example.isemessenger.REPLY"
 internal const val NotificationReadAction = "com.example.isemessenger.READ"
 internal const val NotificationReplyKey = "notification_reply"
 
-internal val NotificationAccentColor = android.graphics.Color.rgb(31, 122, 85)
+internal val BrandPrimaryColor = Color(0xFF2B7A5B)
+internal val BrandDarkColor = Color(0xFF19543E)
+internal val BrandMediumColor = Color(0xFF3E9672)
+internal val BrandSoftColor = Color(0xFFE0F1E8)
+internal val AppCanvasColor = Color(0xFFF4F8F6)
+internal val AppPaperColor = Color(0xFFFFFFFF)
+internal val AppInkColor = Color(0xFF172A22)
+internal val AppMutedColor = Color(0xFF687A71)
+internal val AppLineColor = Color(0xFFDCE8E2)
+internal val AppSoftSurfaceColor = Color(0xFFEBF3EF)
+internal val AppOnlineColor = Color(0xFF2FAE72)
+internal val AppDangerColor = Color(0xFFD65C5C)
+internal val AppDangerSoftColor = Color(0xFFF8E7E7)
+internal val CallBackgroundTopColor = Color(0xFF12261D)
+internal val CallBackgroundBottomColor = Color(0xFF08130F)
+internal val CallBackgroundGlowColor = Color(0xFF28513F)
+
+internal val ChatWallpaperBrush = Brush.linearGradient(
+    listOf(Color(0xFFE0F1E8), AppCanvasColor, Color(0xFFE8F3ED))
+)
+internal val OutgoingMessageBrush = Brush.linearGradient(
+    listOf(Color(0xFF4AAA82), Color(0xFF2F8A68), Color(0xFF21684F))
+)
+internal val IncomingMessageBrush = Brush.linearGradient(
+    listOf(AppPaperColor, AppSoftSurfaceColor)
+)
+
+internal const val NotificationAccentColor = -13927845
 internal const val OverlayDimAlpha = 0.14f
 internal val OverlayScrimColor = Color.Transparent
 
@@ -42,8 +69,8 @@ internal data class IsePalette(
 )
 
 internal val LightPalette = IsePalette(
-    Color(0xFF1F7A55), Color(0xFF115137), Color(0xFFDFF4EA), Color(0xFFF4F7F5), Color(0xFFFFFFFF),
-    Color(0xFF14211A), Color(0xFF6D7B73), Color(0xFFDDE7E1), Color(0xFFEAF1ED), Color(0xFF25B96B)
+    BrandPrimaryColor, BrandDarkColor, BrandSoftColor, AppCanvasColor, AppPaperColor,
+    AppInkColor, AppMutedColor, AppLineColor, AppSoftSurfaceColor, AppOnlineColor
 )
 
 internal val LocalIsePalette = staticCompositionLocalOf { LightPalette }
@@ -60,9 +87,9 @@ internal val SoftSurface: Color @Composable @ReadOnlyComposable get() = LocalIse
 internal val OnlineGreen: Color @Composable @ReadOnlyComposable get() = LocalIsePalette.current.online
 
 internal val AvatarGradients = listOf(
-    Brush.linearGradient(listOf(Color(0xFFBEEBD5), Color(0xFF58B889))),
-    Brush.linearGradient(listOf(Color(0xFFFFDFC0), Color(0xFFF19B54))),
-    Brush.linearGradient(listOf(Color(0xFFD8E1FF), Color(0xFF7793E8))),
-    Brush.linearGradient(listOf(Color(0xFFF5D4E7), Color(0xFFD978AD))),
-    Brush.linearGradient(listOf(Color(0xFFCDEDEC), Color(0xFF55B8B2)))
+    Brush.linearGradient(listOf(Color(0xFFBFE8D3), Color(0xFF63B68E))),
+    Brush.linearGradient(listOf(Color(0xFFD8E8CC), Color(0xFF8CB47A))),
+    Brush.linearGradient(listOf(Color(0xFFC4E8E3), Color(0xFF62ABA2))),
+    Brush.linearGradient(listOf(Color(0xFFD5E2EC), Color(0xFF7E9EB5))),
+    Brush.linearGradient(listOf(Color(0xFFEEE0C8), Color(0xFFC7A26D)))
 )

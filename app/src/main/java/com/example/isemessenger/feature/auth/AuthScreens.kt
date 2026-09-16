@@ -153,7 +153,7 @@ private fun AuthContinueButton(description: String, loading: Boolean, onClick: (
 private fun BrandMark(size: Dp) {
     Box(
         Modifier.size(size).clip(RoundedCornerShape(size * 0.34f))
-            .background(Brush.linearGradient(listOf(Color(0xFF2A8B63), ForestDark))),
+            .background(Brush.linearGradient(listOf(BrandMediumColor, ForestDark))),
         contentAlignment = Alignment.Center
     ) {
         Text("i", color = Color.White, fontWeight = FontWeight.Black, fontSize = (size.value * 0.55f).sp)

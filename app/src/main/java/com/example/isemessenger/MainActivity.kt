@@ -410,12 +410,8 @@ internal val AudioWaveformCache = LruCache<String, List<Float>>(128)
 internal val StableFileKeyCache = Collections.synchronizedMap(WeakHashMap<String, String>())
 internal val StableFileDigest = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
 internal var ActiveAudioMessageId by mutableLongStateOf(0L)
-internal val UnifiedMessageBubbleBrush = Brush.linearGradient(
-    listOf(Color(0xFF43B98A), Color(0xFF238D70), Color(0xFF176957))
-)
-internal val IncomingMessageBubbleBrush = Brush.linearGradient(
-    listOf(Color(0xFFFFFFFF), Color(0xFFEAF1ED))
-)
+internal val UnifiedMessageBubbleBrush = OutgoingMessageBrush
+internal val IncomingMessageBubbleBrush = IncomingMessageBrush
 
 private data class BlurSnapshot(
     val bitmap: Bitmap,
@@ -5084,7 +5080,11 @@ internal fun IseTheme(content: @Composable () -> Unit) {
         onSurface = palette.ink,
         surfaceVariant = palette.softSurface,
         onSurfaceVariant = palette.muted,
-        outline = palette.line
+        outline = palette.line,
+        error = AppDangerColor,
+        onError = Color.White,
+        errorContainer = AppDangerSoftColor,
+        onErrorContainer = AppInkColor
     )
     CompositionLocalProvider(
         LocalIsePalette provides palette,
@@ -6596,7 +6596,7 @@ internal fun ChatRow(
                 Row(Modifier.height(30.dp), verticalAlignment = Alignment.Top) {
                     if (draft.isNotBlank()) {
                         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Черновик:", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFD54848), maxLines = 1)
+                            Text("Черновик:", style = MaterialTheme.typography.bodyMedium, color = AppDangerColor, maxLines = 1)
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 draft,
@@ -8875,12 +8875,12 @@ internal fun MessageReferencePanel(
     )
     val accentColor = when {
         !coloredBubble -> ForestDark
-        darkContent -> Color(0xFF1F7A55)
+        darkContent -> Forest
         else -> Color.White.copy(alpha = 0.9f)
     }
     val previewColor = when {
         !coloredBubble -> Muted
-        darkContent -> Color(0xFF14211A).copy(alpha = 0.78f)
+        darkContent -> Ink.copy(alpha = 0.78f)
         else -> Color.White.copy(alpha = 0.88f)
     }
     Column(
@@ -9400,7 +9400,7 @@ internal fun RedStatusBadge(text: String, modifier: Modifier = Modifier) {
     val width = with(density) { widthPx.toDp() }
     ComposeCanvas(modifier.width(width).height(height)) {
         drawRoundRect(
-            color = Color(0xFFE45151),
+            color = AppDangerColor,
             cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
         )
         val baseline = size.height / 2f - (paint.ascent() + paint.descent()) / 2f

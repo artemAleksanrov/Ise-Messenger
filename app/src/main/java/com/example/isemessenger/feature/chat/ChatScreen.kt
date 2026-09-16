@@ -769,10 +769,15 @@ internal fun ChatScreenContent(
         }
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Canvas,
+            shadowElevation = 0.dp
         ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             RoundAction(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", back)
             Spacer(Modifier.width(9.dp))
             val avatarInteraction = remember(chat.id) { MutableInteractionSource() }
@@ -854,17 +859,8 @@ internal fun ChatScreenContent(
                 )
             }
         }
-        Box(
-            Modifier.weight(1f).fillMaxWidth().background(
-                Brush.linearGradient(
-                    listOf(
-                        Mint,
-                        Canvas,
-                        Color(0xFFE3F2EB)
-                    )
-                )
-            )
-        ) {
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().background(ChatWallpaperBrush)) {
             if (messages.isEmpty() && !loading) {
                 Text(
                     when {
@@ -933,6 +929,20 @@ internal fun ChatScreenContent(
                     }
                 }
             }
+            Box(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(8.dp).background(
+                    Brush.verticalGradient(
+                        listOf(Ink.copy(alpha = 0.12f), Color.Transparent)
+                    )
+                )
+            )
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(8.dp).background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Ink.copy(alpha = 0.12f))
+                    )
+                )
+            )
             val scrollDownVisible = showScrollDownButton || newMessagesBelow > 0
             val scrollDownVerticalOffset by animateDpAsState(
                 targetValue = if (scrollDownVisible) 0.dp else 72.dp,
@@ -974,6 +984,11 @@ internal fun ChatScreenContent(
                     }
             }
         }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Paper,
+            shadowElevation = 0.dp
+        ) {
         Column(Modifier.fillMaxWidth().background(Paper).navigationBarsPadding()) {
         val replyPanelHeight = 66.dp
         val replyPanelHeightPx = with(LocalDensity.current) { replyPanelHeight.toPx() }
@@ -1043,6 +1058,7 @@ internal fun ChatScreenContent(
                 }
             }
         )
+        }
         }
     }
     if (mediaSheetVisible) {

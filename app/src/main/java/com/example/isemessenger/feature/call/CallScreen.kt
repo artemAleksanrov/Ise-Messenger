@@ -417,7 +417,7 @@ internal fun CallScreenContent(
     val activeButtonSize = if (call.video) 52.dp else 58.dp
     Box(
         Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(Color(0xFF101915), Color(0xFF07100C)))
+            Brush.verticalGradient(listOf(CallBackgroundTopColor, CallBackgroundBottomColor))
         )
     ) {
         if (call.video && call.remoteVideo && call.remoteCameraEnabled) {
@@ -425,7 +425,7 @@ internal fun CallScreenContent(
         } else {
             Box(
                 Modifier.fillMaxSize().background(
-                    Brush.radialGradient(listOf(Color(0xFF244A3A), Color(0xFF07100C)), radius = 1100f)
+                    Brush.radialGradient(listOf(CallBackgroundGlowColor, CallBackgroundBottomColor), radius = 1100f)
                 ),
                 contentAlignment = Alignment.Center
             ) {
@@ -473,11 +473,11 @@ internal fun CallScreenContent(
         ) {
             if (call.phase == CallPhase.Incoming) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    CallActionButton(Icons.Rounded.CallEnd, "Отклонить", Color(0xFFE45151).copy(alpha = 0.72f), decline, 70.dp)
+                    CallActionButton(Icons.Rounded.CallEnd, "Отклонить", AppDangerColor.copy(alpha = 0.78f), decline, 70.dp)
                     CallActionButton(
                         if (call.video) Icons.Rounded.Videocam else Icons.Rounded.Call,
                         "Принять",
-                        Color(0xFF28A96B).copy(alpha = 0.72f),
+                        AppOnlineColor.copy(alpha = 0.78f),
                         onClick = {
                             if (hasCallPermissions(context, call.video)) accept()
                             else {
@@ -508,7 +508,7 @@ internal fun CallScreenContent(
                             iconTint = Color.White
                         )
                     }
-                    CallActionButton(Icons.Rounded.CallEnd, "Завершить", Color(0xFFE45151).copy(alpha = 0.72f), end, activeButtonSize)
+                    CallActionButton(Icons.Rounded.CallEnd, "Завершить", AppDangerColor.copy(alpha = 0.78f), end, activeButtonSize)
                     if (!call.video) {
                         CallActionButton(
                             if (call.speaker) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
