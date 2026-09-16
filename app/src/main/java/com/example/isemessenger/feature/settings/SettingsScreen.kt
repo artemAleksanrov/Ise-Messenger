@@ -636,7 +636,8 @@ private fun ChangeEmailAddressSheet(
                 onValueChange = { email = it },
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Done,
-                onDone = { focusManager.clearFocus(); submit(email) }
+                onDone = { focusManager.clearFocus(); submit(email) },
+                autoFocus = true
             )
             Spacer(Modifier.height(14.dp))
             PrimaryButton("Получить код", loading) {
@@ -677,7 +678,8 @@ private fun ChangeEmailCodeSheet(
                 onValueChange = { code = it.filter(Char::isDigit).take(6) },
                 keyboardType = KeyboardType.NumberPassword,
                 imeAction = ImeAction.Done,
-                onDone = { focusManager.clearFocus(); submit(code) }
+                onDone = { focusManager.clearFocus(); submit(code) },
+                autoFocus = true
             )
             Spacer(Modifier.height(14.dp))
             PrimaryButton("Подтвердить", loading) {

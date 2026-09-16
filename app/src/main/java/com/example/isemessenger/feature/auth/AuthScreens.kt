@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,15 +42,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun SplashScreen() {
@@ -62,7 +67,7 @@ internal fun EmailScreen(initialEmail: String, loading: Boolean, submit: (String
     val focusManager = LocalFocusManager.current
     AuthLayout("Введите почту") {
         AppTextField("Почта", email, { email = it }, KeyboardType.Email, ImeAction.Done,
-            onDone = { focusManager.clearFocus(); submit(email) })
+            onDone = { focusManager.clearFocus(); submit(email) }, autoFocus = true)
         Spacer(Modifier.height(14.dp))
         AuthContinueButton("Получить код", loading) { focusManager.clearFocus(); submit(email) }
     }
@@ -77,7 +82,8 @@ internal fun CodeScreen(loading: Boolean, submit: (String) -> Unit, resend: () -
             "Код", code,
             { code = it.filter { character -> character in '0'..'9' }.take(6) },
             KeyboardType.NumberPassword, ImeAction.Done,
-            onDone = { focusManager.clearFocus(); submit(code) }
+            onDone = { focusManager.clearFocus(); submit(code) },
+            autoFocus = true
         )
         Spacer(Modifier.height(14.dp))
         AuthContinueButton("Продолжить", loading) { focusManager.clearFocus(); submit(code) }
@@ -100,7 +106,8 @@ internal fun NameScreen(loading: Boolean, submit: (String) -> Unit) {
             "Имя", name,
             { if (it.codePointCount(0, it.length) <= 40) name = it },
             KeyboardType.Text, ImeAction.Done,
-            onDone = { focusManager.clearFocus(); submit(name) }
+            onDone = { focusManager.clearFocus(); submit(name) },
+            autoFocus = true
         )
         Spacer(Modifier.height(14.dp))
         AuthContinueButton("Начать общение", loading) { focusManager.clearFocus(); submit(name) }
@@ -169,8 +176,18 @@ internal fun AppTextField(
     keyboardType: KeyboardType,
     imeAction: ImeAction,
     onDone: () -> Unit,
+    autoFocus: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            delay(180)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -188,7 +205,7 @@ internal fun AppTextField(
             focusedLabelColor = Forest,
             unfocusedLabelColor = Muted
         ),
-        modifier = modifier.fillMaxWidth().height(60.dp)
+        modifier = modifier.focusRequester(focusRequester).fillMaxWidth().height(60.dp)
     )
 }
 

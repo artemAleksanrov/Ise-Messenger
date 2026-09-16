@@ -245,6 +245,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
@@ -389,7 +390,14 @@ internal fun GroupCreationScreenContent(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val nameFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        delay(220)
+        nameFocusRequester.requestFocus()
+        keyboardController?.show()
+    }
     val candidates = remember(state.chats) {
         state.chats.filter { !it.saved && !it.group && it.userId > 0L }.distinctBy { it.userId }
     }
@@ -493,7 +501,7 @@ internal fun GroupCreationScreenContent(
                     unfocusedContainerColor = SoftSurface,
                     cursorColor = Forest
                 ),
-                modifier = Modifier.fillMaxWidth().height(60.dp)
+                modifier = Modifier.fillMaxWidth().height(60.dp).focusRequester(nameFocusRequester)
             )
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = 12.dp)) {

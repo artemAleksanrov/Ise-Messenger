@@ -247,6 +247,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
@@ -269,6 +271,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalView
@@ -945,7 +948,6 @@ class MainActivity : ComponentActivity() {
     private var statusBarAnimator: ValueAnimator? = null
     private var systemBarsPreview: Boolean? = null
     private var statusBarUsesDarkIcons: Boolean? = null
-    private var appDarkTheme = false
     private var incomingCallOverLockScreen by mutableStateOf(false)
     private var incomingCallLaunchCover: View? = null
     internal var overlayBlurBitmap by mutableStateOf<Bitmap?>(null)
@@ -1186,7 +1188,7 @@ class MainActivity : ComponentActivity() {
     fun updateSystemBars(mediaPreview: Boolean, force: Boolean = false) {
         val previousMode = systemBarsPreview
         systemBarsPreview = mediaPreview
-        val targetDarkIcons = !mediaPreview && !appDarkTheme
+        val targetDarkIcons = !mediaPreview
         if (previousMode == null) {
             enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
@@ -1212,7 +1214,7 @@ class MainActivity : ComponentActivity() {
             statusBarUsesDarkIcons = targetDarkIcons
             return
         }
-        insetsController.isAppearanceLightStatusBars = statusBarUsesDarkIcons ?: (!previousMode && !appDarkTheme)
+        insetsController.isAppearanceLightStatusBars = statusBarUsesDarkIcons ?: !previousMode
         var appearanceSwitched = false
         val switchPoint = if (mediaPreview) 0.44f else 0.56f
         statusBarAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -1228,11 +1230,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun updateThemeSystemBars(darkTheme: Boolean) {
-        if (appDarkTheme == darkTheme && statusBarUsesDarkIcons != null) return
-        appDarkTheme = darkTheme
-        updateSystemBars(systemBarsPreview == true, true)
-    }
 }
 
 internal enum class Screen {
@@ -6640,7 +6637,8 @@ internal fun AddChatSheet(loading: Boolean, create: (String) -> Unit) {
             onValueChange = { email = it },
             keyboardType = KeyboardType.Email,
             imeAction = ImeAction.Done,
-            onDone = { focusManager.clearFocus(); create(email) }
+            onDone = { focusManager.clearFocus(); create(email) },
+            autoFocus = true
         )
         Spacer(Modifier.height(14.dp))
         PrimaryButton("Открыть чат", loading) { focusManager.clearFocus(); create(email) }
@@ -6901,7 +6899,6 @@ internal fun PreviewSystemBars(active: Boolean) {
     val view = LocalView.current
     LaunchedEffect(view, active) {
         val activity = view.context as? MainActivity ?: return@LaunchedEffect
-        activity.updateThemeSystemBars(false)
         activity.updateSystemBars(active)
     }
 }
@@ -7274,6 +7271,8 @@ internal fun RenameChatSheet(
     reset: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember(chat.id) { FocusRequester() }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var closing by remember(chat.id) { mutableStateOf(false) }
@@ -7293,6 +7292,9 @@ internal fun RenameChatSheet(
     }
     LaunchedEffect(chat.id) {
         name = name.copy(selection = TextRange(name.text.length))
+        delay(180)
+        focusRequester.requestFocus()
+        keyboardController?.show()
     }
     ModalBottomSheet(
         onDismissRequest = dismiss,
@@ -7330,7 +7332,7 @@ internal fun RenameChatSheet(
                     unfocusedContainerColor = SoftSurface,
                     cursorColor = Forest
                 ),
-                modifier = Modifier.fillMaxWidth().height(60.dp)
+                modifier = Modifier.fillMaxWidth().height(60.dp).focusRequester(focusRequester)
             )
             Spacer(Modifier.height(16.dp))
             PrimaryButton("Сохранить", loading = closing, enabled = canSave && !closing) {
@@ -9053,6 +9055,7 @@ internal fun MessageReadStatus(read: Boolean, tint: Color) {
 internal fun MessageComposer(
     value: String,
     editing: Boolean,
+    focusRequestKey: Long?,
     voiceRecording: Boolean,
     voiceRecordingDuration: Long,
     uploadProgress: Float?,
@@ -9066,6 +9069,8 @@ internal fun MessageComposer(
     onSend: (String) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
     var fieldValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -9075,6 +9080,13 @@ internal fun MessageComposer(
         )
     }
     var wasEditing by remember { mutableStateOf(editing) }
+    LaunchedEffect(focusRequestKey) {
+        if (focusRequestKey != null) {
+            delay(80)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     LaunchedEffect(editing, value) {
         val startedEditing = editing && !wasEditing
         wasEditing = editing
@@ -9193,6 +9205,7 @@ internal fun MessageComposer(
                 unfocusedLabelColor = Muted
             ),
             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp, max = 140.dp)
+                .focusRequester(focusRequester)
     )
 }
 

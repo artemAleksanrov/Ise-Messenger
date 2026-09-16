@@ -229,6 +229,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -248,6 +250,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
@@ -422,6 +425,8 @@ internal fun ChatsScreenContent(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val searchFocusRequester = remember { FocusRequester() }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     var searchVisible by remember(archived) { mutableStateOf(false) }
@@ -430,6 +435,13 @@ internal fun ChatsScreenContent(
     var deleteConfirmationTarget by remember { mutableStateOf<ChatItem?>(null) }
     var renameTarget by remember { mutableStateOf<ChatItem?>(null) }
     var activeSwipeChatId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(searchVisible) {
+        if (searchVisible) {
+            delay(180)
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     val displayedChats = remember(chats, archived, searchQuery) {
         val query = searchQuery.trim()
         chats.filter {
@@ -549,6 +561,7 @@ internal fun ChatsScreenContent(
                         cursorColor = Forest
                     ),
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                        .focusRequester(searchFocusRequester)
                         .height(54.dp)
                 )
             }

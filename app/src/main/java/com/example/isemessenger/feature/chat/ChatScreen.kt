@@ -466,7 +466,10 @@ internal fun ChatScreenContent(
     val view = LocalView.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val navigationBarColor = Paper.toArgb()
+    val panelShadowColor = Ink.copy(alpha = 0.12f)
+    val panelShadowHeight = 8.dp
+    val panelColor = Paper
+    val navigationBarColor = panelColor.toArgb()
     DisposableEffect(view, navigationBarColor) {
         val window = view.context.findMainActivity()?.window
         @Suppress("DEPRECATION")
@@ -768,10 +771,10 @@ internal fun ChatScreenContent(
             previousNewestMessageId = message.id
         }
     }
-    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(panelColor).statusBarsPadding().imePadding()) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Canvas,
+            color = panelColor,
             shadowElevation = 0.dp
         ) {
             Row(
@@ -930,16 +933,16 @@ internal fun ChatScreenContent(
                 }
             }
             Box(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(8.dp).background(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(panelShadowHeight).background(
                     Brush.verticalGradient(
-                        listOf(Ink.copy(alpha = 0.12f), Color.Transparent)
+                        listOf(panelShadowColor, Color.Transparent)
                     )
                 )
             )
             Box(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(8.dp).background(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(panelShadowHeight).background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Ink.copy(alpha = 0.12f))
+                        listOf(Color.Transparent, panelShadowColor)
                     )
                 )
             )
@@ -986,10 +989,10 @@ internal fun ChatScreenContent(
         }
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Paper,
+            color = panelColor,
             shadowElevation = 0.dp
         ) {
-        Column(Modifier.fillMaxWidth().background(Paper).navigationBarsPadding()) {
+        Column(Modifier.fillMaxWidth().background(panelColor).navigationBarsPadding()) {
         val replyPanelHeight = 66.dp
         val replyPanelHeightPx = with(LocalDensity.current) { replyPanelHeight.toPx() }
         Box(
@@ -1011,6 +1014,7 @@ internal fun ChatScreenContent(
         MessageComposer(
             value = editingMessage?.let { editingText } ?: draft,
             editing = editingMessage != null,
+            focusRequestKey = editingMessage?.id ?: replyTo?.id,
             voiceRecording = voiceRecording,
             voiceRecordingDuration = voiceRecordingDuration,
             uploadProgress = uploadProgress,
