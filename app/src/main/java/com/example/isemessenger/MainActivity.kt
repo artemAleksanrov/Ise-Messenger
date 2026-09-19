@@ -266,6 +266,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -1345,6 +1346,21 @@ internal enum class AttachmentSection { Media, Audio, Files }
 
 internal enum class UploadContentType { Photo, Video, Media, Audio, File }
 
+internal val MessageReactionEmojis = listOf(
+    "👍", "❤️", "😂", "😮", "😢",
+    "🔥", "👏", "🎉", "😍", "🤔",
+    "👎", "😡", "🤯", "😭", "🙏",
+    "👌", "💯", "🤣", "😊", "😎",
+    "🤩", "😴", "🤢", "💩", "🥳"
+)
+
+@Immutable
+internal data class MessageReaction(
+    val emoji: String,
+    val count: Int,
+    val mine: Boolean
+)
+
 internal val MessageLinkPattern = Regex(
     """(?<![\p{L}\p{N}_@])(?:[a-z][a-z0-9+.-]*://[^\s<>\"']+|mailto:[^\s<>\"']+|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:[\p{L}]{2,63}|xn--[a-z0-9-]{2,59})|(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?|(?:www\.)?(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:[\p{L}]{2,63}|xn--[a-z0-9-]{2,59})(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?)""",
     RegexOption.IGNORE_CASE
@@ -1375,8 +1391,26 @@ internal data class MessageItem(
     val replyKind: String,
     val forwardedFromName: String,
     val forwardedFromId: Long,
-    val edited: Boolean
+    val edited: Boolean,
+    val reactions: List<MessageReaction> = emptyList(),
+    val reactionsLoaded: Boolean = false
 )
+
+internal fun preserveMessageReactions(incoming: MessageItem, existing: MessageItem?): MessageItem {
+    return if (incoming.reactionsLoaded || existing == null) incoming else incoming.copy(
+        reactions = existing.reactions,
+        reactionsLoaded = existing.reactionsLoaded
+    )
+}
+
+internal fun aggregateMessageReactions(messages: List<MessageItem>): List<MessageReaction> {
+    return MessageReactionEmojis.mapNotNull { emoji ->
+        val matches = messages.flatMap(MessageItem::reactions).filter { it.emoji == emoji && it.count > 0 }
+        matches.takeIf { it.isNotEmpty() }?.let {
+            MessageReaction(emoji, it.sumOf(MessageReaction::count), it.any(MessageReaction::mine))
+        }
+    }
+}
 
 @Immutable
 internal data class ChatMessageEntry(val messages: List<MessageItem>) {
@@ -1547,6 +1581,8 @@ internal class MessengerController(context: Context, private val onCallFinished:
     private var olderMessagesLoading = false
     private val pendingReadMessageIds = HashMap<Long, Long>()
     private val readJobs = HashMap<Long, Job>()
+    private val reactionTargets = HashMap<Long, String>()
+    private val reactionJobs = HashMap<Long, Job>()
     private var socketReconnectAttempt = 0
     private var listUpdatesInFlight = 0
     private var chatReturnScreen = Screen.Chats
@@ -2707,7 +2743,10 @@ internal class MessengerController(context: Context, private val onCallFinished:
             runCatching {
                 api.patch("/messages/${editing.id}", JSONObject().put("text", text), state.token)
             }.onSuccess { response ->
-                val updated = parseMessage(response.getJSONObject("message")).copy(mine = true)
+                val updated = preserveMessageReactions(
+                    parseMessage(response.getJSONObject("message")).copy(mine = true),
+                    state.messages.firstOrNull { it.id == editing.id }
+                )
                 state = state.copy(
                     sending = false,
                     editingMessage = null,
@@ -2823,6 +2862,50 @@ internal class MessengerController(context: Context, private val onCallFinished:
                     loadChats(true)
                 }
                 .onFailureActive { state = state.copy(error = errorText(it)) }
+        }
+    }
+
+    fun setMessageReaction(message: MessageItem, emoji: String) {
+        if (emoji !in MessageReactionEmojis) return
+        val current = state.messages.firstOrNull { it.id == message.id } ?: message
+        val currentEmoji = reactionTargets[message.id]
+            ?: current.reactions.firstOrNull { reaction -> reaction.mine }?.emoji.orEmpty()
+        reactionTargets[message.id] = emoji.takeUnless { it == currentEmoji }.orEmpty()
+        if (reactionJobs[message.id]?.isActive == true) return
+        val token = state.token
+        reactionJobs[message.id] = scope.launch {
+            try {
+                while (true) {
+                    val selectedEmoji = reactionTargets[message.id] ?: break
+                    val body = JSONObject()
+                        .put("emoji", selectedEmoji)
+                        .put("remove", selectedEmoji.isBlank())
+                    val response = try {
+                        api.post("/messages/${message.id}/reaction", body, token)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        reactionTargets.remove(message.id)
+                        state = state.copy(error = errorText(error))
+                        break
+                    }
+                    if (reactionTargets[message.id] != selectedEmoji) continue
+
+                    val messageId = response.optLong("message_id", message.id)
+                    val chatId = response.optLong("chat_id", message.chatId)
+                    val existing = state.messages.firstOrNull { it.id == messageId }
+                    val (reactions, loaded) = parseMessageReactions(response)
+                    if (existing != null && loaded && state.currentChat?.id == chatId) {
+                        val updated = existing.copy(reactions = reactions, reactionsLoaded = true)
+                        state = state.copy(messages = state.messages.map { if (it.id == messageId) updated else it })
+                        cacheMessages(state.userId, chatId, state.messages)
+                    }
+                    reactionTargets.remove(message.id)
+                    break
+                }
+            } finally {
+                reactionJobs.remove(message.id)
+            }
         }
     }
 
@@ -3625,9 +3708,11 @@ internal class MessengerController(context: Context, private val onCallFinished:
                 }
                     .onSuccess { messages ->
                         if (requestId == messagesRequestId && state.currentChat?.id == chatId) {
+                            val existingById = state.messages.associateBy { it.id }
+                            val hydrated = messages.map { preserveMessageReactions(it, existingById[it.id]) }
                             val merged = if (catchUp) {
-                                (state.messages + messages).distinctBy { it.id }.sortedBy { it.id }
-                            } else messages
+                                (state.messages + hydrated).distinctBy { it.id }.sortedBy { it.id }
+                            } else hydrated
                             cacheMessages(state.userId, chatId, merged)
                             state = state.copy(
                                 messages = merged,
@@ -3663,7 +3748,9 @@ internal class MessengerController(context: Context, private val onCallFinished:
                 withContext(Dispatchers.Default) { parseMessages(array) }
             }.onSuccess { older ->
                 if (state.currentChat?.id == chatId) {
-                    val merged = (older + state.messages).distinctBy { it.id }.sortedBy { it.id }
+                    val existingById = state.messages.associateBy { it.id }
+                    val hydrated = older.map { preserveMessageReactions(it, existingById[it.id]) }
+                    val merged = (hydrated + state.messages).distinctBy { it.id }.sortedBy { it.id }
                     cacheMessages(state.userId, chatId, merged)
                     state = state.copy(
                         messages = merged,
@@ -3748,7 +3835,10 @@ internal class MessengerController(context: Context, private val onCallFinished:
                             }
                             "message_edited" -> {
                                 val parsed = parseMessage(event.getJSONObject("message"))
-                                val message = parsed.copy(mine = parsed.senderId == state.userId)
+                                val message = preserveMessageReactions(
+                                    parsed.copy(mine = parsed.senderId == state.userId),
+                                    state.messages.firstOrNull { it.id == parsed.id }
+                                )
                                 if (state.currentChat?.id == message.chatId) {
                                     state = state.copy(
                                         messages = state.messages.map { if (it.id == message.id) message else it },
@@ -3757,6 +3847,46 @@ internal class MessengerController(context: Context, private val onCallFinished:
                                     cacheMessages(state.userId, message.chatId, state.messages)
                                 }
                                 scheduleChatsRefresh()
+                            }
+                            "message_reaction", "message_reactions" -> {
+                                val messageId = event.optLong("message_id")
+                                val existing = state.messages.firstOrNull { it.id == messageId }
+                                val updated = when {
+                                    event.has("message") -> preserveMessageReactions(
+                                        parseMessage(event.getJSONObject("message")).copy(
+                                            mine = event.getJSONObject("message").optLong("sender_id") == state.userId
+                                        ),
+                                        existing
+                                    )
+                                    existing != null -> {
+                                        val (serverReactions, loaded) = parseMessageReactions(event)
+                                        if (loaded) {
+                                            val reactorId = event.optLong("reactor_id")
+                                            val eventEmoji = event.optString("emoji")
+                                            val pendingEmoji = reactionTargets[messageId]
+                                            if (reactorId == state.userId && pendingEmoji != null && eventEmoji != pendingEmoji) {
+                                                existing
+                                            } else {
+                                                val mineEmoji = if (reactorId == state.userId) {
+                                                    eventEmoji
+                                                } else {
+                                                    existing.reactions.firstOrNull { it.mine }?.emoji.orEmpty()
+                                                }
+                                                existing.copy(
+                                                    reactions = serverReactions.map { it.copy(mine = it.emoji == mineEmoji) },
+                                                    reactionsLoaded = true
+                                                )
+                                            }
+                                        } else existing
+                                    }
+                                    else -> null
+                                }
+                                if (updated != null && state.currentChat?.id == updated.chatId) {
+                                    state = state.copy(
+                                        messages = state.messages.map { if (it.id == updated.id) updated else it }
+                                    )
+                                    cacheMessages(state.userId, updated.chatId, state.messages)
+                                }
                             }
                             "chat_cleared" -> {
                                 val chatId = event.getLong("chat_id")
@@ -4969,9 +5099,58 @@ internal fun parseMessages(array: JSONArray): List<MessageItem> {
     }
 }
 
+internal fun parseMessageReactions(json: JSONObject): Pair<List<MessageReaction>, Boolean> {
+    val loaded = json.has("reactions")
+    if (!loaded) return emptyList<MessageReaction>() to false
+    val myReaction = json.optString("my_reaction").takeIf { it in MessageReactionEmojis }
+    val parsed = mutableListOf<MessageReaction>()
+    when (val value = json.opt("reactions")) {
+        is JSONArray -> for (index in 0 until value.length()) {
+            when (val item = value.opt(index)) {
+                is JSONObject -> {
+                    val emoji = item.optString("emoji").ifBlank { item.optString("reaction") }
+                    val count = item.optInt("count", 0)
+                    if (emoji in MessageReactionEmojis && count > 0) {
+                        parsed += MessageReaction(
+                            emoji = emoji,
+                            count = count,
+                            mine = item.optBoolean("mine") || item.optBoolean("selected") || emoji == myReaction
+                        )
+                    }
+                }
+                is String -> if (item in MessageReactionEmojis) {
+                    parsed += MessageReaction(item, 1, item == myReaction)
+                }
+            }
+        }
+        is JSONObject -> value.keys().forEach { emoji ->
+            val item = value.opt(emoji)
+            val count = when (item) {
+                is Number -> item.toInt()
+                is JSONObject -> item.optInt("count", 0)
+                else -> 0
+            }
+            if (emoji in MessageReactionEmojis && count > 0) {
+                val mine = (item as? JSONObject)?.let {
+                    it.optBoolean("mine") || it.optBoolean("selected")
+                } ?: false
+                parsed += MessageReaction(emoji, count, mine || emoji == myReaction)
+            }
+        }
+    }
+    val combined = MessageReactionEmojis.mapNotNull { emoji ->
+        val matches = parsed.filter { it.emoji == emoji }
+        matches.takeIf { it.isNotEmpty() }?.let {
+            MessageReaction(emoji, it.sumOf(MessageReaction::count), it.any(MessageReaction::mine))
+        }
+    }
+    return combined to true
+}
+
 internal fun parseMessage(json: JSONObject): MessageItem {
     val rawKind = json.optString("kind", "text").ifBlank { "text" }
     val rawReplyKind = json.optString("reply_kind")
+    val (reactions, reactionsLoaded) = parseMessageReactions(json)
     return MessageItem(
         id = json.getLong("id"),
         chatId = json.getLong("chat_id"),
@@ -4996,7 +5175,9 @@ internal fun parseMessage(json: JSONObject): MessageItem {
         replyKind = if (rawReplyKind == "video_note") "video" else rawReplyKind,
         forwardedFromName = json.optString("forwarded_from_name"),
         forwardedFromId = json.optLong("forwarded_from_id"),
-        edited = json.optBoolean("edited")
+        edited = json.optBoolean("edited"),
+        reactions = reactions,
+        reactionsLoaded = reactionsLoaded
     )
 }
 
@@ -5028,6 +5209,17 @@ internal fun messagesToJson(messages: List<MessageItem>): JSONArray = JSONArray(
                 .put("forwarded_from_name", message.forwardedFromName)
                 .put("forwarded_from_id", message.forwardedFromId)
                 .put("edited", message.edited)
+                .put("reactions", JSONArray().apply {
+                    message.reactions.forEach { reaction ->
+                        put(
+                            JSONObject()
+                                .put("emoji", reaction.emoji)
+                                .put("count", reaction.count)
+                                .put("mine", reaction.mine)
+                        )
+                    }
+                })
+                .put("my_reaction", message.reactions.firstOrNull { it.mine }?.emoji.orEmpty())
         )
     }
 }
@@ -5614,7 +5806,7 @@ internal fun GroupMembersSheet(members: List<GroupMember>, openAvatar: (GroupMem
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.72f).bottomSheetPop()) {
             if (members.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(28.dp), color = Forest, strokeWidth = 2.5.dp)
+                    CircularProgressIndicator(Modifier.size(28.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
@@ -5654,7 +5846,7 @@ internal fun GallerySheet(select: (Uri) -> Unit) {
             } else if (!loading) {
                 Text("Фотографии не найдены", color = Muted, modifier = Modifier.align(Alignment.Center))
             }
-            if (loading) CircularProgressIndicator(Modifier.size(30.dp).align(Alignment.Center), color = Forest, strokeWidth = 2.5.dp)
+            if (loading) CircularProgressIndicator(Modifier.size(30.dp).align(Alignment.Center), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
         }
     }
 }
@@ -6024,7 +6216,7 @@ internal fun DeviceFileBrowser(
             HorizontalDivider(color = Line)
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(30.dp), color = Forest, strokeWidth = 2.5.dp)
+                    CircularProgressIndicator(Modifier.size(30.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
                 }
                 !readable -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -6106,7 +6298,7 @@ internal fun DeviceStorageRow(
                 contentAlignment = Alignment.Center
             ) {
                 if (previewPreparing) {
-                    CircularProgressIndicator(Modifier.size(22.dp), color = Forest, strokeWidth = 2.5.dp)
+                    CircularProgressIndicator(Modifier.size(22.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
                 } else {
                     Icon(
                         if (previewPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -6258,6 +6450,7 @@ internal fun DeviceAudioList(
             loading -> CircularProgressIndicator(
                 Modifier.size(30.dp).align(Alignment.Center),
                 color = Forest,
+                trackColor = Color.Transparent,
                 strokeWidth = 2.5.dp
             )
             else -> Text("Аудио не найдено", color = Muted, modifier = Modifier.align(Alignment.Center))
@@ -6293,7 +6486,7 @@ internal fun DeviceAudioItem(
             contentAlignment = Alignment.Center
         ) {
             if (previewPreparing) {
-                CircularProgressIndicator(Modifier.size(23.dp), color = Forest, strokeWidth = 2.5.dp)
+                CircularProgressIndicator(Modifier.size(23.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
             } else {
                 Icon(
                     if (previewPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -6376,7 +6569,7 @@ internal fun DeviceMediaGrid(
         } else if (!loading) {
             Text("Фото и видео не найдены", color = Muted, modifier = Modifier.align(Alignment.Center))
         }
-        if (loading) CircularProgressIndicator(Modifier.size(30.dp).align(Alignment.Center), color = Forest, strokeWidth = 2.5.dp)
+        if (loading) CircularProgressIndicator(Modifier.size(30.dp).align(Alignment.Center), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
     }
 }
 
@@ -6882,7 +7075,7 @@ internal fun ConfirmationSheet(
                     Spacer(Modifier.width(8.dp))
                     TextButton(onClick = { close(confirm) }, enabled = !loading && !closing) {
                         if (loading) {
-                            CircularProgressIndicator(Modifier.size(18.dp), color = Forest, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(18.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.dp)
                         } else {
                             Text(confirmText, color = Forest)
                         }
@@ -7122,6 +7315,7 @@ internal fun MessageActionsSheet(
     senderAvatar: String = "",
     showReadStatus: Boolean = true,
     dismiss: () -> Unit,
+    react: (String) -> Unit,
     delete: () -> Unit,
     edit: () -> Unit,
     copy: () -> Unit,
@@ -7132,14 +7326,22 @@ internal fun MessageActionsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
     val closeThen: (() -> Unit) -> Unit = { action ->
-        scope.launch {
-            sheetState.hide()
-            action()
+        if (!closing) {
+            closing = true
+            scope.launch {
+                try {
+                    sheetState.hide()
+                } finally {
+                    dismiss()
+                    action()
+                }
+            }
         }
     }
     ModalBottomSheet(
-        onDismissRequest = dismiss,
+        onDismissRequest = { closeThen {} },
         sheetState = sheetState,
         sheetGesturesEnabled = false,
         containerColor = Color.Transparent,
@@ -7148,8 +7350,21 @@ internal fun MessageActionsSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
     ) {
-        BottomSheetWindowBehavior()
-        Column(Modifier.fillMaxWidth().bottomSheetPop()) {
+        BottomSheetWindowBehavior(blurVisible = !closing)
+        Column(
+            Modifier.fillMaxWidth().bottomSheetPop().verticalScroll(rememberScrollState())
+        ) {
+            MessageReactionPicker(
+                selectedEmoji = message.reactions.firstOrNull { it.mine }?.emoji,
+                mine = previewMessage.mine,
+                select = { emoji ->
+                    if (!closing) {
+                        react(emoji)
+                        closeThen {}
+                    }
+                }
+            )
+            Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
                 MessageBubble(
                     message = previewMessage,
@@ -7190,6 +7405,67 @@ internal fun MessageActionsSheet(
                         action = { closeThen(forward) },
                         mirrorIcon = true
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MessageReactionPicker(
+    selectedEmoji: String?,
+    mine: Boolean,
+    select: (String) -> Unit
+) {
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+        contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Surface(
+            color = Paper,
+            shape = RoundedCornerShape(28.dp),
+            shadowElevation = 3.dp
+        ) {
+            Column(
+                Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                MessageReactionEmojis.chunked(5).forEach { reactionRow ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        reactionRow.forEach { emoji ->
+                            val interactionSource = remember(emoji) { MutableInteractionSource() }
+                            val selected = selectedEmoji == emoji
+                            val selectionColor by animateColorAsState(
+                                targetValue = if (selected) Mint else Color.Transparent,
+                                animationSpec = tween(150),
+                                label = "reaction_picker_color"
+                            )
+                            val selectionScale by animateFloatAsState(
+                                targetValue = if (selected) 1.12f else 1f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                                label = "reaction_picker_scale"
+                            )
+                            Box(
+                                Modifier.size(40.dp).clip(CircleShape)
+                                    .background(selectionColor)
+                                    .graphicsLayer {
+                                        scaleX = selectionScale
+                                        scaleY = selectionScale
+                                    }
+                                    .clickable(
+                                        interactionSource = interactionSource,
+                                        indication = null,
+                                        onClick = { select(emoji) }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(emoji, fontSize = 23.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -7668,7 +7944,7 @@ internal fun MediaLoadingIndicator(modifier: Modifier = Modifier, progress: Floa
         CircularProgressIndicator(
             modifier = modifier.size(30.dp),
             color = color,
-            trackColor = color.copy(alpha = 0.22f),
+            trackColor = Color.Transparent,
             strokeWidth = 3.dp
         )
     } else {
@@ -8179,6 +8455,7 @@ internal fun LinkifiedMessageText(
     color: Color,
     linkColor: Color,
     style: TextStyle,
+    textAlign: TextAlign = TextAlign.Start,
     interactive: Boolean,
     onLongPress: () -> Unit
 ) {
@@ -8207,7 +8484,14 @@ internal fun LinkifiedMessageText(
             )
         }
     } else Modifier
-    Text(annotated, color = color, style = style, modifier = linkInteraction, onTextLayout = { layoutResult = it })
+    Text(
+        text = annotated,
+        color = color,
+        style = style,
+        textAlign = textAlign,
+        modifier = linkInteraction,
+        onTextLayout = { layoutResult = it }
+    )
 }
 
 @Composable
@@ -8222,6 +8506,7 @@ internal fun MessageBubble(
     openMedia: (MessageItem) -> Unit,
     openFile: () -> Unit = {},
     onLongPress: (MessageItem) -> Unit = {},
+    onReaction: ((MessageItem, String) -> Unit)? = null,
     onSwipeReply: (() -> Unit)? = null,
     onReplySwipeActiveChanged: (Boolean) -> Unit = {},
     onReplyReferenceClick: (Long) -> Unit = {},
@@ -8250,6 +8535,14 @@ internal fun MessageBubble(
         }
     }
     val displayedMedia = remember(message, mediaItems) { if (mediaItems.isEmpty()) listOf(message) else mediaItems }
+    val displayedReactions = remember(displayedMedia) { aggregateMessageReactions(displayedMedia) }
+    val toggleDisplayedReaction: ((String) -> Unit)? = onReaction?.let { action ->
+        { emoji ->
+            val target = displayedMedia.firstOrNull { item -> item.reactions.any(MessageReaction::mine) }
+                ?: message
+            action(target, emoji)
+        }
+    }
     val interaction = if (canInteract) {
         Modifier
             .combinedClickable(
@@ -8394,21 +8687,32 @@ internal fun MessageBubble(
                                         token
                                     )
                                 }
-                                if (showMetadata) {
-                                    Surface(
-                                        modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
-                                        color = Color.Black.copy(alpha = 0.42f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        tonalElevation = 0.dp,
-                                        shadowElevation = 0.dp
-                                    ) {
-                                        Row(
-                                            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            MessageTimeAndStatus(message, Color.White, showReadStatus)
-                                        }
-                                    }
+                            }
+                            if (displayedReactions.isNotEmpty()) {
+                                MessageReactionsBar(
+                                    reactions = displayedReactions,
+                                    mine = message.mine,
+                                    onReactionClick = toggleDisplayedReaction,
+                                    modifier = Modifier.padding(
+                                        start = 8.dp,
+                                        end = 8.dp,
+                                        top = 3.dp,
+                                        bottom = if (showMetadata) 2.dp else 7.dp
+                                    )
+                                )
+                            }
+                            if (showMetadata) {
+                                Row(
+                                    Modifier.align(if (message.mine) Alignment.End else Alignment.Start)
+                                        .padding(
+                                            start = 8.dp,
+                                            end = 8.dp,
+                                            top = if (displayedReactions.isEmpty()) 3.dp else 0.dp,
+                                            bottom = 7.dp
+                                        ),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    MessageTimeAndStatus(message, bubbleContentColor, showReadStatus)
                                 }
                             }
                         }
@@ -8421,6 +8725,8 @@ internal fun MessageBubble(
                             contentColor = bubbleContentColor,
                             showMetadata = showMetadata,
                             showReadStatus = showReadStatus,
+                            reactions = displayedReactions,
+                            onReactionClick = toggleDisplayedReaction,
                             interactive = interactive,
                             onReplyReferenceClick = onReplyReferenceClick.takeIf { interactive }
                         )
@@ -8433,6 +8739,8 @@ internal fun MessageBubble(
                             contentColor = bubbleContentColor,
                             showMetadata = showMetadata,
                             showReadStatus = showReadStatus,
+                            reactions = displayedReactions,
+                            onReactionClick = toggleDisplayedReaction,
                             onReplyReferenceClick = onReplyReferenceClick.takeIf { interactive }
                         )
                     } else {
@@ -8443,9 +8751,21 @@ internal fun MessageBubble(
                             tonalElevation = 0.dp,
                             shadowElevation = 0.dp
                         ) {
-                            Column(
-                                Modifier.background(bubbleBrush)
-                                    .padding(horizontal = 15.dp, vertical = 10.dp)
+                            StableReactionColumn(
+                                reactions = displayedReactions,
+                                mine = message.mine,
+                                onReactionClick = toggleDisplayedReaction,
+                                modifier = Modifier.background(bubbleBrush)
+                                    .padding(horizontal = 15.dp, vertical = 10.dp),
+                                horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start,
+                                footer = {
+                                    if (showMetadata) {
+                                        Spacer(Modifier.height(3.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            MessageTimeAndStatus(message, bubbleContentColor, showReadStatus)
+                                        }
+                                    }
+                                }
                             ) {
                                 MessageContext(
                                     message,
@@ -8461,22 +8781,140 @@ internal fun MessageBubble(
                                     color = bubbleContentColor,
                                     linkColor = bubbleLinkColor,
                                     style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = if (message.mine) TextAlign.End else TextAlign.Start,
                                     interactive = interactive,
                                     onLongPress = { onLongPress(message) }
                                 )
-                                if (showMetadata) {
-                                    Spacer(Modifier.height(3.dp))
-                                    Row(
-                                        Modifier.align(Alignment.End),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        MessageTimeAndStatus(message, bubbleContentColor, showReadStatus)
-                                    }
-                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun StableReactionColumn(
+    reactions: List<MessageReaction>,
+    mine: Boolean,
+    onReactionClick: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start,
+    footer: @Composable ColumnScope.() -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Column(horizontalAlignment = horizontalAlignment, content = content)
+            if (reactions.isNotEmpty()) {
+                MessageReactionsBar(
+                    reactions = reactions,
+                    mine = mine,
+                    onReactionClick = onReactionClick,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+            }
+            Column(
+                horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
+                content = footer
+            )
+        }
+    ) { measurables, constraints ->
+        val hasReactions = reactions.isNotEmpty()
+        val reactionsBar = if (hasReactions) measurables[1].measure(
+            constraints.copy(minWidth = 0, minHeight = 0)
+        ) else null
+        val footerMeasurable = measurables[if (hasReactions) 2 else 1]
+        val footerIntrinsicWidth = footerMeasurable.maxIntrinsicWidth(constraints.maxHeight)
+        val minimumBodyWidth = maxOf(reactionsBar?.width ?: 0, footerIntrinsicWidth)
+            .coerceIn(constraints.minWidth, constraints.maxWidth)
+        val body = measurables.first().measure(
+            constraints.copy(
+                minWidth = maxOf(constraints.minWidth, minimumBodyWidth),
+                minHeight = 0
+            )
+        )
+        val width = maxOf(body.width, reactionsBar?.width ?: 0, footerIntrinsicWidth)
+            .coerceIn(constraints.minWidth, constraints.maxWidth)
+        val footer = footerMeasurable.measure(
+            constraints.copy(minWidth = width, maxWidth = width, minHeight = 0)
+        )
+        val height = (body.height + (reactionsBar?.height ?: 0) + footer.height)
+            .coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            body.placeRelative(0, 0)
+            reactionsBar?.placeRelative(
+                x = if (mine) (width - reactionsBar.width).coerceAtLeast(0) else 0,
+                y = body.height
+            )
+            footer.placeRelative(0, body.height + (reactionsBar?.height ?: 0))
+        }
+    }
+}
+
+@Composable
+internal fun MessageReactionsBar(
+    reactions: List<MessageReaction>,
+    mine: Boolean,
+    onReactionClick: ((String) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val visibleReactions = reactions.filter { it.count > 0 }
+    Layout(
+        modifier = modifier,
+        content = {
+            visibleReactions.forEach { reaction ->
+                val reactionInteraction = remember(reaction.emoji) { MutableInteractionSource() }
+                val chipColor by animateColorAsState(
+                    targetValue = if (reaction.mine) Mint else SoftSurface,
+                    animationSpec = tween(160),
+                    label = "message_reaction_color"
+                )
+                Row(
+                    Modifier.clip(RoundedCornerShape(13.dp))
+                        .background(chipColor)
+                        .then(if (onReactionClick == null) Modifier else Modifier.clickable(
+                            interactionSource = reactionInteraction,
+                            indication = null,
+                            onClick = { onReactionClick(reaction.emoji) }
+                        ))
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(reaction.emoji, fontSize = 14.sp)
+                    Spacer(Modifier.width(2.dp))
+                    AnimatedContent(
+                        targetState = reaction.count,
+                        transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) },
+                        label = "message_reaction_count"
+                    ) { count ->
+                        Text(
+                            if (count > 99) "99+" else count.toString(),
+                            color = Ink,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+    ) { measurables, constraints ->
+        val spacing = 4.dp.roundToPx()
+        val itemConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val placeables = measurables.map { it.measure(itemConstraints) }
+        val naturalWidth = placeables.foldIndexed(0) { index, width, placeable ->
+            width + placeable.width + if (index == 0) 0 else spacing
+        }
+        val width = naturalWidth.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = (placeables.maxOfOrNull { it.height } ?: 0)
+            .coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            var x = if (mine) (width - naturalWidth).coerceAtLeast(0) else 0
+            placeables.forEach { placeable ->
+                placeable.placeRelative(x, 0)
+                x += placeable.width + spacing
             }
         }
     }
@@ -8492,6 +8930,8 @@ internal fun AudioMessageBubble(
     modifier: Modifier = Modifier,
     showMetadata: Boolean = true,
     showReadStatus: Boolean = true,
+    reactions: List<MessageReaction> = emptyList(),
+    onReactionClick: ((String) -> Unit)? = null,
     interactive: Boolean = true,
     onReplyReferenceClick: ((Long) -> Unit)? = null
 ) {
@@ -8649,9 +9089,20 @@ internal fun AudioMessageBubble(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        Column(
-            Modifier.background(bubbleBrush)
-                .padding(horizontal = 11.dp, vertical = 8.dp)
+        StableReactionColumn(
+            reactions = reactions,
+            mine = message.mine,
+            onReactionClick = onReactionClick,
+            modifier = Modifier.background(bubbleBrush)
+                .padding(horizontal = 11.dp, vertical = 8.dp),
+            footer = {
+                if (showMetadata) {
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MessageTimeAndStatus(message, contentColor, showReadStatus)
+                    }
+                }
+            }
         ) {
             MessageContext(
                 message,
@@ -8681,7 +9132,7 @@ internal fun AudioMessageBubble(
                             progress = { downloadProgress.coerceIn(0f, 1f) },
                             modifier = Modifier.size(22.dp),
                             color = contentColor,
-                            trackColor = contentColor.copy(alpha = 0.2f),
+                            trackColor = Color.Transparent,
                             strokeWidth = 2.5.dp
                         )
                     } else {
@@ -8721,12 +9172,6 @@ internal fun AudioMessageBubble(
                     }
                 }
             }
-            if (showMetadata) {
-                Spacer(Modifier.height(2.dp))
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    MessageTimeAndStatus(message, contentColor, showReadStatus)
-                }
-            }
         }
     }
 }
@@ -8741,6 +9186,8 @@ internal fun FileMessageBubble(
     modifier: Modifier = Modifier,
     showMetadata: Boolean = true,
     showReadStatus: Boolean = true,
+    reactions: List<MessageReaction> = emptyList(),
+    onReactionClick: ((String) -> Unit)? = null,
     onReplyReferenceClick: ((Long) -> Unit)? = null
 ) {
     Surface(
@@ -8750,9 +9197,20 @@ internal fun FileMessageBubble(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        Column(
-            Modifier.background(bubbleBrush)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+        StableReactionColumn(
+            reactions = reactions,
+            mine = message.mine,
+            onReactionClick = onReactionClick,
+            modifier = Modifier.background(bubbleBrush)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            footer = {
+                if (showMetadata) {
+                    Spacer(Modifier.height(3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MessageTimeAndStatus(message, contentColor, showReadStatus)
+                    }
+                }
+            }
         ) {
             MessageContext(
                 message,
@@ -8786,12 +9244,6 @@ internal fun FileMessageBubble(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(formatFileSize(message.mediaSize), color = contentColor.copy(alpha = 0.72f), fontSize = 12.sp)
-                }
-            }
-            if (showMetadata) {
-                Spacer(Modifier.height(3.dp))
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    MessageTimeAndStatus(message, contentColor, showReadStatus)
                 }
             }
         }

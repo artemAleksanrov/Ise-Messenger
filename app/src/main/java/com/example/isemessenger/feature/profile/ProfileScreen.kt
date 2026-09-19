@@ -471,7 +471,7 @@ internal fun ChatProfileScreenContent(
                 ) {
                     val avatarInteraction = remember(chat.id) { MutableInteractionSource() }
                     Box(
-                        Modifier.clip(CircleShape).clickable(
+                        Modifier.size(112.dp).clickable(
                             interactionSource = avatarInteraction,
                             indication = null
                         ) {

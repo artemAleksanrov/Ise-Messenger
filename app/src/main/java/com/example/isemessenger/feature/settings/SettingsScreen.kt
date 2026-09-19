@@ -524,7 +524,7 @@ internal fun SettingsScreenContent(
                         enabled = !loading
                     ) {
                         if (loading) {
-                            CircularProgressIndicator(Modifier.size(20.dp), color = Forest, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(20.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.dp)
                         } else {
                             Icon(Icons.Rounded.Done, contentDescription = "Сохранить имя", tint = Forest)
                         }

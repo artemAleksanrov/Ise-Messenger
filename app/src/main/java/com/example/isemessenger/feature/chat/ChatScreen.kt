@@ -399,7 +399,7 @@ internal fun ChatScreenRoute(controller: MessengerController, errorState: Snackb
         controller::toggleLocalMediaSelection, controller::selectReply,
         controller::cancelReply, controller::startEditing, controller::cancelEditing,
         controller::editMessage, { value -> controller.updateDraft(chat.id, value) },
-        controller::deleteMessage, controller::loadOlderMessages,
+        controller::deleteMessage, controller::setMessageReaction, controller::loadOlderMessages,
         controller::markMessageRead,
         controller::forwardMessage, controller::openLocalMediaPreview, controller::openRemoteMediaPreview,
         controller::openChatProfile, controller::showPermissionError,
@@ -445,6 +445,7 @@ internal fun ChatScreenContent(
     editMessage: (String) -> Unit,
     updateDraft: (String) -> Unit,
     deleteMessage: (MessageItem) -> Unit,
+    reactToMessage: (MessageItem, String) -> Unit,
     loadOlderMessages: () -> Unit,
     markMessageRead: (Long, Long) -> Unit,
     forwardMessage: (MessageItem, ChatItem) -> Unit,
@@ -915,6 +916,7 @@ internal fun ChatScreenContent(
                                     actionMessage = selectedMessage
                                 }
                             },
+                            onReaction = reactToMessage,
                             onSwipeReply = { selectReply(message) },
                             onReplySwipeActiveChanged = updateReplySwipeActive,
                             onReplyReferenceClick = scrollToReply,
@@ -927,7 +929,7 @@ internal fun ChatScreenContent(
                 if (loadingOlderMessages) {
                     item(key = "older_messages_loading") {
                         Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(Modifier.size(20.dp), color = Forest, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(20.dp), color = Forest, trackColor = Color.Transparent, strokeWidth = 2.dp)
                         }
                     }
                 }
@@ -1184,6 +1186,7 @@ internal fun ChatScreenContent(
             senderAvatar = previewSender?.avatar.orEmpty(),
             showReadStatus = !chat.saved,
             dismiss = { actionMessage = null },
+            react = { emoji -> reactToMessage(selected, emoji) },
             delete = {
                 actionMessage = null
                 deleteMessage(selected)

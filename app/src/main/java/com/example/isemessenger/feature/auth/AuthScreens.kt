@@ -145,7 +145,7 @@ private fun AuthContinueButton(description: String, loading: Boolean, onClick: (
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 2.dp)
     ) {
         if (loading) {
-            CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.5.dp)
+            CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
         } else {
             Icon(
                 Icons.AutoMirrored.Rounded.ArrowForward,
@@ -219,7 +219,7 @@ internal fun PrimaryButton(text: String, loading: Boolean, enabled: Boolean = tr
         colors = ButtonDefaults.buttonColors(containerColor = Forest, disabledContainerColor = Forest.copy(alpha = 0.38f)),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 2.dp)
     ) {
-        if (loading) CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.5.dp)
+        if (loading) CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, trackColor = Color.Transparent, strokeWidth = 2.5.dp)
         else Text(text, style = MaterialTheme.typography.labelLarge)
     }
 }
