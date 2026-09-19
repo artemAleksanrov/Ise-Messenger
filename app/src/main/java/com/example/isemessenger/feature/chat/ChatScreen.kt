@@ -469,7 +469,7 @@ internal fun ChatScreenContent(
     val scope = rememberCoroutineScope()
     val panelShadowColor = Ink.copy(alpha = 0.12f)
     val panelShadowHeight = 8.dp
-    val panelColor = Paper
+    val panelColor = Canvas
     val navigationBarColor = panelColor.toArgb()
     DisposableEffect(view, navigationBarColor) {
         val window = view.context.findMainActivity()?.window
